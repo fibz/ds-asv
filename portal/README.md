@@ -1,5 +1,25 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Tenant database setup (RLS)
+
+Tenant isolation is enforced by PostgreSQL row-level security (RLS). Two DB
+roles are required (created by `prisma/migrations/*_rls/migration.sql`):
+
+- `asv` — superuser (BYPASSRLS); used ONLY by the Prisma CLI for migrations.
+  It bypasses RLS unconditionally, so the application must never connect as it.
+- `asv_app` — non-superuser, non-owner; all application/tenant DML runs as this
+  role and is subject to the RLS policies.
+
+Connections (`portal/.env`):
+
+- `DATABASE_URL` → `asv_app` (app + tests, RLS enforced)
+- `ADMIN_DATABASE_URL` → `asv` (prisma CLI / `npx prisma migrate ...`)
+
+Tenant queries must run inside `prisma.$transaction(async (tx) => ...)` with
+`setRlsContext(orgId, tx)` from `@/lib/tenant`; the RLS session variable is
+transaction-scoped, so it must be set on the same connection that runs the
+queries.
+
 ## Getting Started
 
 First, run the development server:
