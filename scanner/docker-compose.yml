@@ -1,0 +1,160 @@
+# ASV Scanner - Production deployment with managed RDS + MinIO
+# Usage: docker-compose -f docker-compose.yml up -d
+# Set DATABASE_URL env var for managed RDS connection string
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: asv-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: asv_scanner
+      POSTGRES_USER: asv
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGE_ME}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:8880:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U asv -d asv_scanner"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    image: asv-scanner:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: asv-scanner-api
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg2://asv:CHANGE_ME@db:5432/asv_scanner}
+      - API_BEARER_TOKEN=${API_BEARER_TOKEN:-dev-token}
+      - LOCAL_PORTAL_DEV_ACCESS=true
+      - ASV_NAME=${ASV_NAME:-ASV Scanner Platform}
+      - ASV_CERTIFICATION_NUMBER=${ASV_CERTIFICATION_NUMBER:-}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-asvadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-CHANGEME-32CHAR-MIN}
+      - MINIO_SECURE=${MINIO_SECURE:-false}
+      - MINIO_BUCKET=${MINIO_BUCKET:-asv-evidence}
+      - WINRM_USERNAME=${WINRM_USERNAME:-ASVScanner}
+      - NVD_FEED_PATH=${NVD_FEED_PATH:-}
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "0.0.0.0:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - asv-evidence:/tmp/asv-evidence
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+
+  minio:
+    image: minio/minio:latest
+    container_name: asv-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-asvadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-CHANGEME-32CHAR-MIN}
+      MINIO_REGION: us-east-1
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: asv-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  asv-worker:
+    image: asv-scanner:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: asv-scanner-worker
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      DATABASE_URL: ${CELERY_DATABASE_URL:-${DATABASE_URL:-postgresql+psycopg2://asv:CHANGE_ME@db:5432/asv_scanner}}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-asvadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-CHANGEME-32CHAR-MIN}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
+      MINIO_BUCKET: ${MINIO_BUCKET:-asv-evidence}
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:-dev-token}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: ["celery", "-A", "app.tasks.celery_app", "worker", "--loglevel=info", "--concurrency=4"]
+    volumes:
+      - asv-evidence:/tmp/asv-evidence
+
+  asv-beat:
+    image: asv-scanner:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: asv-scanner-beat
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${CELERY_DATABASE_URL:-${DATABASE_URL:-postgresql+psycopg2://asv:CHANGE_ME@db:5432/asv_scanner}}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-asvadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-CHANGEME-32CHAR-MIN}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
+      MINIO_BUCKET: ${MINIO_BUCKET:-asv-evidence}
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:-dev-token}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["celery", "-A", "app.tasks.celery_app", "beat", "--loglevel=info"]
+    volumes:
+      - asv-beat-schedule:/var/lib/asv
+
+volumes:
+  postgres-data:
+  minio-data:
+  asv-evidence:
+  asv-beat-schedule:

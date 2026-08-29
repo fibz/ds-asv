@@ -31,3 +31,16 @@ build/
 
 # OS
 .DS_Store
+
+# Consolidated: portal (Next.js)
+portal/node_modules/
+portal/.next/
+portal/.next-new/
+
+# Consolidated: scanner (Python)
+scanner/.venv/
+scanner/__pycache__/
+scanner/.pytest_cache/
+scanner/.mypy_cache/
+scanner/.coverage
+scanner/prisma/generated/

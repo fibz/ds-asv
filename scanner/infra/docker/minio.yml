@@ -1,0 +1,26 @@
+# MinIO evidence storage with Object Lock
+# Usage: docker-compose -f minio.yml up -d
+
+version: "3.8"
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: asv-evidence
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: asvadmin
+      MINIO_ROOT_PASSWORD: CHANGEME-32CHAR-MIN
+      MINIO_REGION: us-east-1
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  minio-data:

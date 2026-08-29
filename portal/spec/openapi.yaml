@@ -1,0 +1,1086 @@
+openapi: 3.0.3
+info:
+  title: Compliance Engine API
+  version: 1.0.0
+  description: |
+    API for the Compliance Engine platform — ASV scanning, WAF management,
+    Wazuh SIEM integration, and compliance assessment (SOC 2, PCI DSS, PCI SSS).
+
+    ## Authentication
+
+    All API requests require an API key passed in the `X-API-Key` header.
+    Keys are scoped — see the `scopes` object on key creation for available
+    permissions.
+
+    ## Scopes
+
+    | Scope | Grants |
+    |-------|--------|
+    | `read:scans` | Read scan results and status |
+    | `write:scans` | Start and stop scans |
+    | `read:waf` | Read WAF rules and traffic stats |
+    | `manage:waf` | Create, update, delete WAF rules |
+    | `read:siem` | Read SIEM alerts and agents |
+    | `write:siem` | Resolve alerts, trigger active response |
+    | `read:compliance` | Read compliance frameworks and assessments |
+    | `admin` | Full access to all resources |
+
+  contact:
+    name: Compliance Engine Support
+    email: support@compliance-engine.example
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.compliance-engine.example/v1
+    description: Production
+  - url: https://sandbox.compliance-engine.example/v1
+    description: Sandbox
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Auth
+    description: API key management
+  - name: Scanners
+    description: ASV, vulnerability, and compliance scans
+  - name: WAF
+    description: Web Application Firewall rule management
+  - name: SIEM
+    description: Wazuh SIEM alerts, agents, and active response
+  - name: Compliance
+    description: Framework assessment and control tracking
+  - name: Payments
+    description: Payment engine compliance (preview)
+
+paths:
+  /auth/api-keys:
+    post:
+      tags: [Auth]
+      summary: Create API key
+      operationId: createApiKey
+      security:
+        - ApiKeyAuth: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiKeyCreate'
+      responses:
+        '201':
+          description: API key created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyCreated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    get:
+      tags: [Auth]
+      summary: List API keys
+      operationId: listApiKeys
+      security:
+        - ApiKeyAuth: [admin]
+      responses:
+        '200':
+          description: List of API keys (secrets masked)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ApiKey'
+
+  /auth/api-keys/{keyId}:
+    parameters:
+      - $ref: '#/components/parameters/keyId'
+    get:
+      tags: [Auth]
+      summary: Get API key
+      operationId: getApiKey
+      security:
+        - ApiKeyAuth: [admin]
+      responses:
+        '200':
+          description: API key details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKey'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Auth]
+      summary: Update API key
+      operationId: updateApiKey
+      security:
+        - ApiKeyAuth: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiKeyUpdate'
+      responses:
+        '200':
+          description: Updated API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKey'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Auth]
+      summary: Revoke API key
+      operationId: revokeApiKey
+      security:
+        - ApiKeyAuth: [admin]
+      responses:
+        '204':
+          description: API key revoked
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /auth/api-keys/{keyId}/rotate:
+    parameters:
+      - $ref: '#/components/parameters/keyId'
+    post:
+      tags: [Auth]
+      summary: Rotate API key secret
+      operationId: rotateApiKey
+      security:
+        - ApiKeyAuth: [admin]
+      responses:
+        '200':
+          description: New secret returned (shown once)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyCreated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /scans:
+    post:
+      tags: [Scanners]
+      summary: Start a scan
+      operationId: createScan
+      security:
+        - ApiKeyAuth: [write:scans]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScanRequest'
+      responses:
+        '202':
+          description: Scan accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    get:
+      tags: [Scanners]
+      summary: List scans
+      operationId: listScans
+      security:
+        - ApiKeyAuth: [read:scans]
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          description: Scan list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Scan'
+
+  /scans/{scanId}:
+    parameters:
+      - $ref: '#/components/parameters/scanId'
+    get:
+      tags: [Scanners]
+      summary: Get scan status and results
+      operationId: getScan
+      security:
+        - ApiKeyAuth: [read:scans]
+      responses:
+        '200':
+          description: Scan details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scan'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Scanners]
+      summary: Stop a running scan
+      operationId: stopScan
+      security:
+        - ApiKeyAuth: [write:scans]
+      responses:
+        '204':
+          description: Scan stopped
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /waf/rules:
+    get:
+      tags: [WAF]
+      summary: List WAF rules
+      operationId: listWafRules
+      security:
+        - ApiKeyAuth: [read:waf]
+      responses:
+        '200':
+          description: WAF rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WafRule'
+    post:
+      tags: [WAF]
+      summary: Create WAF rule
+      operationId: createWafRule
+      security:
+        - ApiKeyAuth: [manage:waf]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WafRuleCreate'
+      responses:
+        '201':
+          description: WAF rule created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WafRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /waf/rules/{ruleId}:
+    parameters:
+      - $ref: '#/components/parameters/ruleId'
+    get:
+      tags: [WAF]
+      summary: Get WAF rule
+      operationId: getWafRule
+      security:
+        - ApiKeyAuth: [read:waf]
+      responses:
+        '200':
+          description: WAF rule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WafRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [WAF]
+      summary: Update WAF rule
+      operationId: updateWafRule
+      security:
+        - ApiKeyAuth: [manage:waf]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WafRuleUpdate'
+      responses:
+        '200':
+          description: Updated WAF rule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WafRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [WAF]
+      summary: Delete WAF rule
+      operationId: deleteWafRule
+      security:
+        - ApiKeyAuth: [manage:waf]
+      responses:
+        '204':
+          description: WAF rule deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /waf/stats:
+    get:
+      tags: [WAF]
+      summary: Get WAF traffic statistics
+      operationId: getWafStats
+      security:
+        - ApiKeyAuth: [read:waf]
+      responses:
+        '200':
+          description: Traffic stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WafStats'
+
+  /siem/alerts:
+    get:
+      tags: [SIEM]
+      summary: List SIEM alerts
+      operationId: listSiemAlerts
+      security:
+        - ApiKeyAuth: [read:siem]
+      parameters:
+        - name: severity
+          in: query
+          schema:
+            $ref: '#/components/schemas/Severity'
+        - name: resolved
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: SIEM alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SiemAlert'
+
+  /siem/alerts/{alertId}:
+    parameters:
+      - $ref: '#/components/parameters/alertId'
+    get:
+      tags: [SIEM]
+      summary: Get SIEM alert
+      operationId: getSiemAlert
+      security:
+        - ApiKeyAuth: [read:siem]
+      responses:
+        '200':
+          description: SIEM alert
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiemAlert'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [SIEM]
+      summary: Update SIEM alert (resolve)
+      operationId: updateSiemAlert
+      security:
+        - ApiKeyAuth: [write:siem]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                resolved:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated SIEM alert
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiemAlert'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /siem/agents:
+    get:
+      tags: [SIEM]
+      summary: List Wazuh agents
+      operationId: listSiemAgents
+      security:
+        - ApiKeyAuth: [read:siem]
+      responses:
+        '200':
+          description: Wazuh agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SiemAgent'
+
+  /siem/active-response:
+    post:
+      tags: [SIEM]
+      summary: Trigger active response
+      operationId: triggerActiveResponse
+      security:
+        - ApiKeyAuth: [write:siem]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agentId, command]
+              properties:
+                agentId:
+                  type: string
+                command:
+                  type: string
+                arguments:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '202':
+          description: Active response dispatched
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /compliance/frameworks:
+    get:
+      tags: [Compliance]
+      summary: List compliance frameworks
+      operationId: listFrameworks
+      security:
+        - ApiKeyAuth: [read:compliance]
+      responses:
+        '200':
+          description: Frameworks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ComplianceFramework'
+
+  /compliance/frameworks/{framework}:
+    parameters:
+      - $ref: '#/components/parameters/framework'
+    get:
+      tags: [Compliance]
+      summary: Get framework detail
+      operationId: getFramework
+      security:
+        - ApiKeyAuth: [read:compliance]
+      responses:
+        '200':
+          description: Framework with controls
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplianceFramework'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /compliance/assessments:
+    get:
+      tags: [Compliance]
+      summary: List assessments
+      operationId: listAssessments
+      security:
+        - ApiKeyAuth: [read:compliance]
+      responses:
+        '200':
+          description: Assessments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ComplianceAssessment'
+    post:
+      tags: [Compliance]
+      summary: Run assessment
+      operationId: createAssessment
+      security:
+        - ApiKeyAuth: [read:compliance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [framework]
+              properties:
+                framework:
+                  type: string
+      responses:
+        '202':
+          description: Assessment started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplianceAssessment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /compliance/controls/{controlId}:
+    parameters:
+      - $ref: '#/components/parameters/controlId'
+    patch:
+      tags: [Compliance]
+      summary: Update control status
+      operationId: updateControl
+      security:
+        - ApiKeyAuth: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: '#/components/schemas/ControlStatus'
+                evidence:
+                  type: string
+      responses:
+        '200':
+          description: Control updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payments/transactions:
+    get:
+      tags: [Payments]
+      summary: List payment transactions
+      operationId: listTransactions
+      security:
+        - ApiKeyAuth: [admin]
+      responses:
+        '200':
+          description: Transactions (preview)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaymentTransaction'
+
+  /payments/webhooks:
+    get:
+      tags: [Payments]
+      summary: List payment webhooks
+      operationId: listPaymentWebhooks
+      security:
+        - ApiKeyAuth: [admin]
+      responses:
+        '200':
+          description: Webhooks (preview)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaymentWebhook'
+    post:
+      tags: [Payments]
+      summary: Register payment webhook
+      operationId: createPaymentWebhook
+      security:
+        - ApiKeyAuth: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, events]
+              properties:
+                url:
+                  type: string
+                  format: uri
+                events:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: Webhook registered
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  parameters:
+    keyId:
+      name: keyId
+      in: path
+      required: true
+      schema:
+        type: string
+    scanId:
+      name: scanId
+      in: path
+      required: true
+      schema:
+        type: string
+    ruleId:
+      name: ruleId
+      in: path
+      required: true
+      schema:
+        type: string
+    alertId:
+      name: alertId
+      in: path
+      required: true
+      schema:
+        type: string
+    controlId:
+      name: controlId
+      in: path
+      required: true
+      schema:
+        type: string
+    framework:
+      name: framework
+      in: path
+      required: true
+      schema:
+        type: string
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Insufficient scope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    ScanType:
+      type: string
+      enum: [ASV, VULNERABILITY, COMPLIANCE]
+
+    ScanStatus:
+      type: string
+      enum: [PENDING, RUNNING, COMPLETED, FAILED]
+
+    Severity:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, CRITICAL]
+
+    ControlStatus:
+      type: string
+      enum: [COMPLIANT, NON_COMPLIANT, IN_PROGRESS, NOT_ASSESSED]
+
+    Scope:
+      type: string
+      enum:
+        - read:scans
+        - write:scans
+        - read:waf
+        - manage:waf
+        - read:siem
+        - write:siem
+        - read:compliance
+        - admin
+
+    ApiKeyCreate:
+      type: object
+      required: [name, scopes]
+      properties:
+        name:
+          type: string
+          example: My Integration Key
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Scope'
+        expiresAt:
+          type: string
+          format: date-time
+          description: Optional expiry. Omit for non-expiring.
+
+    ApiKey:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        maskedKey:
+          type: string
+          example: sk_live_••••••••a1b2
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Scope'
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    ApiKeyCreated:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        key:
+          type: string
+          description: Full secret — shown only once.
+          example: sk_live_EXAMPLE_PLACEHOLDER
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Scope'
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ApiKeyUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Scope'
+
+    ScanRequest:
+      type: object
+      required: [target, type]
+      properties:
+        target:
+          type: string
+          example: https://example.com
+        type:
+          $ref: '#/components/schemas/ScanType'
+        options:
+          type: object
+          additionalProperties: true
+
+    Vulnerability:
+      type: object
+      properties:
+        id:
+          type: string
+        severity:
+          $ref: '#/components/schemas/Severity'
+        description:
+          type: string
+        recommendation:
+          type: string
+
+    ScanResults:
+      type: object
+      properties:
+        vulnerabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vulnerability'
+        score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        summary:
+          type: string
+
+    Scan:
+      type: object
+      properties:
+        id:
+          type: string
+        target:
+          type: string
+        type:
+          $ref: '#/components/schemas/ScanType'
+        status:
+          $ref: '#/components/schemas/ScanStatus'
+        results:
+          $ref: '#/components/schemas/ScanResults'
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    RuleCondition:
+      type: object
+      required: [field, operator, value]
+      properties:
+        field:
+          type: string
+          example: request.uri
+        operator:
+          type: string
+          example: contains
+        value:
+          type: string
+          example: /admin
+
+    WafAction:
+      type: string
+      enum: [ALLOW, BLOCK, LOG]
+
+    WafRule:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        action:
+          $ref: '#/components/schemas/WafAction'
+        conditions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleCondition'
+        priority:
+          type: integer
+        enabled:
+          type: boolean
+
+    WafRuleCreate:
+      type: object
+      required: [name, action, conditions]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        action:
+          $ref: '#/components/schemas/WafAction'
+        conditions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleCondition'
+        priority:
+          type: integer
+        enabled:
+          type: boolean
+          default: true
+
+    WafRuleUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        action:
+          $ref: '#/components/schemas/WafAction'
+        conditions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleCondition'
+        priority:
+          type: integer
+        enabled:
+          type: boolean
+
+    WafStats:
+      type: object
+      properties:
+        totalRequests:
+          type: integer
+        blockedRequests:
+          type: integer
+        allowedRequests:
+          type: integer
+
+    SiemAlert:
+      type: object
+      properties:
+        id:
+          type: string
+        severity:
+          $ref: '#/components/schemas/Severity'
+        source:
+          type: string
+          example: Wazuh
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        resolved:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    SiemAgent:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          example: active
+        ip:
+          type: string
+        os:
+          type: string
+        lastKeepAlive:
+          type: string
+          format: date-time
+
+    ComplianceFramework:
+      type: object
+      properties:
+        name:
+          type: string
+          example: PCI DSS
+        version:
+          type: string
+          example: "4.0"
+        controls:
+          type: array
+          items:
+            $ref: '#/components/schemas/Control'
+
+    Control:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "1.1"
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/ControlStatus'
+        evidence:
+          type: string
+          nullable: true
+        lastChecked:
+          type: string
+          format: date-time
+          nullable: true
+
+    ComplianceAssessment:
+      type: object
+      properties:
+        id:
+          type: string
+        framework:
+          type: string
+        status:
+          $ref: '#/components/schemas/ScanStatus'
+        score:
+          type: number
+          format: float
+        startedAt:
+          type: string
+          format: date-time
+
+    PaymentTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+        amount:
+          type: number
+          format: float
+        currency:
+          type: string
+          example: USD
+        status:
+          type: string
+          example: settled
+        createdAt:
+          type: string
+          format: date-time
+
+    PaymentWebhook:
+      type: object
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+        secret:
+          type: string
+          description: HMAC signing secret

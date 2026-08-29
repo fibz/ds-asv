@@ -1,0 +1,25 @@
+[Unit]
+Description=ASV Scanner Celery worker (scan executors)
+After=network-online.target redis.service postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=asv
+Group=asv
+WorkingDirectory=/opt/asv-scanner
+EnvironmentFile=-/etc/asv/asv.env
+ExecStart=/opt/asv-scanner/.venv/bin/celery -A app.tasks.celery_app worker \
+    --loglevel=info --concurrency=4
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/asv /tmp/asv-evidence
+
+[Install]
+WantedBy=multi-user.target

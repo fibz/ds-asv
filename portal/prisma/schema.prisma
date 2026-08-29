@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client"
+  output   = "/tmp/prisma-generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Organization {
+  id            String        @id @default(cuid())
+  name          String
+  clerkId       String        @unique
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  compliance    Compliance[]
+  scans         Scan[]
+  wafConfigs    WafConfig[]
+  siemAlerts    SiemAlert[]
+  apiKeys       ApiKey[]
+}
+
+model Compliance {
+  id            String   @id @default(cuid())
+  orgId         String
+  framework     String   // SOC2, PCI_DSS, PCI_SSS
+  status        String   @default("IN_PROGRESS") // COMPLIANT, NON_COMPLIANT, IN_PROGRESS
+  lastAudit     DateTime?
+  controls      Json     // Compliance control results
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([framework])
+}
+
+model Scan {
+  id            String   @id @default(cuid())
+  orgId         String
+  type          String   // ASV, VULNERABILITY, COMPLIANCE
+  status        String   @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED
+  target        String   // Target IP/URL
+  results       Json?
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([status])
+}
+
+model WafConfig {
+  id            String   @id @default(cuid())
+  orgId         String
+  name          String
+  rules         Json     // WAF rules configuration
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+model SiemAlert {
+  id            String   @id @default(cuid())
+  orgId         String
+  severity      String   // LOW, MEDIUM, HIGH, CRITICAL
+  source        String   // Wazuh, Custom, T3MP3ST
+  title         String
+  description   String?
+  metadata      Json?
+  resolved      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([severity])
+  @@index([resolved])
+}
+
+model User {
+  id            String   @id @default(cuid())
+  clerkId       String   @unique
+  email         String
+  orgId         String?
+  role          String   @default("member") // admin, member, viewer
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ApiKey {
+  id            String   @id @default(cuid())
+  name          String
+  keyHash       String   @unique
+  scopes        String[]
+  orgId         String
+  lastUsedAt    DateTime?
+  expiresAt     DateTime?
+  revokedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([keyHash])
+}

@@ -1,0 +1,26 @@
+[Unit]
+Description=ASV Scanner Celery beat scheduler (quarterly PCI rescans)
+After=network-online.target redis.service postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=asv
+Group=asv
+WorkingDirectory=/opt/asv-scanner
+EnvironmentFile=-/etc/asv/asv.env
+ExecStart=/opt/asv-scanner/.venv/bin/celery -A app.tasks.celery_app beat \
+    --loglevel=info --scheduler=celery.beat:PersistentScheduler \
+    --schedule=/var/lib/asv/celerybeat-schedule
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/asv /var/lib/asv
+
+[Install]
+WantedBy=multi-user.target

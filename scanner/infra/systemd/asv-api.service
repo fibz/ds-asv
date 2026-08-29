@@ -1,0 +1,28 @@
+[Unit]
+Description=ASV Scanner API (FastAPI/gunicorn)
+After=network-online.target postgresql.service redis.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=asv
+Group=asv
+WorkingDirectory=/opt/asv-scanner
+EnvironmentFile=-/etc/asv/asv.env
+ExecStart=/opt/asv-scanner/.venv/bin/gunicorn \
+    --bind 0.0.0.0:8000 \
+    --workers 4 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    app.api.main:app
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/asv /tmp/asv-evidence
+
+[Install]
+WantedBy=multi-user.target

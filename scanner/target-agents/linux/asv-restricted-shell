@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# ASV Restricted Shell — only whitelisted commands permitted.
+# Place at /usr/local/bin/asv-restricted-shell
+# chmod 755
+# Use as ForceCommand or shell for asvscan user.
+
+set -euo pipefail
+
+readonly ALLOWED_COMMANDS=(
+    "id -u"
+    "sudo -n -l 2>&1"
+    'touch /tmp/asv_write_test_$$ 2>&1; echo $?'
+    "cat /etc/os-release"
+    "uname -a"
+    "uname -r"
+    "dpkg -l"
+    "dpkg -l 2>/dev/null"
+    "rpm -qa"
+    "rpm -qa 2>/dev/null"
+    "pacman -Q"
+    "pacman -Q 2>/dev/null"
+    "systemctl list-units --type=service"
+    "systemctl list-units --type=service --no-pager"
+    "systemctl list-units --type=service --state=running"
+    "systemctl list-units --type=service --state=running --no-pager 2>/dev/null"
+    "ss -tlnp"
+    "ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null"
+    "ss -tlnp --no-header"
+    "netstat -tlnp"
+    "ps aux"
+    "ps aux --no-header"
+    "cat /etc/passwd"
+    "cat /etc/shadow"
+    "stat -c '%a' /etc/shadow"
+    "stat -c '%a' /etc/shadow 2>/dev/null"
+    "find / -perm -4000 -type f"
+    "find / -perm -4000 -type f 2>/dev/null"
+    "iptables -L -n"
+    "iptables -L -n 2>/dev/null"
+    "iptables -L -n --line-numbers"
+    "ip addr show"
+    "ip route show"
+    "lsmod"
+    "cat /proc/version"
+    "sysctl -a"
+)
+
+cmd="${SSH_ORIGINAL_COMMAND:-$*}"
+cmd_normalized=$(echo "$cmd" | sed 's/[[:space:]]\+/ /g' | sed 's/^ //;s/ $//')
+
+for allowed in "${ALLOWED_COMMANDS[@]}"; do
+    if [[ "$cmd_normalized" == "$allowed" ]]; then
+        exec bash -c "$cmd"
+        exit 0
+    fi
+done
+
+echo "ERROR: Command not permitted by ASV scanner policy." >&2
+echo "Received: $cmd_normalized" >&2
+exit 1

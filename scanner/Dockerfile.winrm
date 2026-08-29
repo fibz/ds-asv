@@ -1,0 +1,55 @@
+# ASV Scanner WinRM runtime image.
+#
+# Mirrors the main Dockerfile but adds WinRM-authenticated scanning runtime
+# dependencies (pywinrm is already in requirements.txt; the system libraries
+# cover optional NTLM/Kerberos auth used by Windows targets).
+
+# Dockerfile.winrm production image
+FROM python:3.13-slim
+
+# Install system dependencies (weasyprint, psycopg2, paramiko, winrm auth).
+# krb5-user prompts for a default realm unless apt is explicitly noninteractive.
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq-dev \
+        libffi-dev \
+        libssl-dev \
+        libxml2-dev \
+        libxslt-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libcap2-bin \
+        libgdk-pixbuf-2.0-0 \
+        nmap \
+        shared-mime-info \
+        fonts-dejavu-core \
+        fonts-liberation \
+        libkrb5-dev \
+        krb5-user \
+    && setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/bin/nmap \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash app
+
+WORKDIR /app
+
+COPY requirements.txt requirements-dev.txt ./
+
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
+
+COPY app/ ./app/
+COPY target-agents/ ./target-agents/
+
+RUN mkdir -p /tmp/asv-evidence && chown -R app:app /tmp/asv-evidence
+
+USER app
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request;urllib.request.urlopen('http://localhost:8000/v1/health')" || exit 1
+
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "4", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", "app.api.main:app"]
