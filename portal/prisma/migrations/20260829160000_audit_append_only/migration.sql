@@ -1,0 +1,15 @@
+-- Final review wave: enforce append-only audit at the DB (PCI DSS Req 10).
+--
+-- Task 7's "append-only audit" deliverable closed the app surface (the only
+-- write path is recordAudit's INSERT; no update/delete exists in code), but
+-- 20260829142337_rls_hardening still granted asv_app blanket
+-- SELECT, INSERT, UPDATE, DELETE on "AuditEvent". Nothing in the application
+-- updates or deletes audit rows (verified in review), so REVOKE makes the
+-- append-only guarantee STRUCTURAL instead of incidental: even a compromised
+-- asv_app connection cannot mutate or destroy audit history (Req 10.2/10.4
+-- protect audit logs from modification/deletion).
+--
+-- SELECT is kept (tenant-scoped reads for reporting); INSERT is kept (the
+-- recordAudit append path). RLS continues to scope every read/write per
+-- tenant; the app role simply no longer possesses UPDATE/DELETE at all.
+REVOKE UPDATE, DELETE ON "AuditEvent" FROM asv_app;

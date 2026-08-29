@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma-client";
 import { maskApiKey } from "@/lib/auth/api-keys";
 import { ApiKeyForm } from "@/components/dashboard/ApiKeyForm";
 import { ApiKeyTable, type ApiKey } from "@/components/dashboard/ApiKeyTable";

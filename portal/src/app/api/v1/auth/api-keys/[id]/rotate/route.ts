@@ -1,43 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
-import { prisma } from "@/lib/prisma";
-import { generateApiKey, hashApiKey } from "@/lib/auth/api-keys";
+import { API_KEYS_NOT_IMPLEMENTED } from "@/lib/auth/api-keys";
+import { provisionKeycloakUser } from "@/lib/auth/keycloak";
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { userId } = await auth();
-  if (!userId) {
+/**
+ * ApiKey RLS policies + grants are deliberately deferred to Phase 2 (first
+ * task). asv_app has NO grants on "ApiKey" (fail-closed by design), so the
+ * old rotation flow here would 500 with permission-denied the moment it
+ * touched the table. Until Phase 2 revives the surface, authentication is
+ * still enforced (401), then the route answers an explicit, self-documenting
+ * 501 instead of an opaque 500.
+ */
+export async function POST(request: NextRequest) {
+  const keycloakUser = await provisionKeycloakUser(request);
+  if (!keycloakUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const user = await prisma.user.findUnique({ where: { clerkId: userId } });
-  if (!user || !user.orgId || user.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const { id } = await params;
-  const existing = await prisma.apiKey.findFirst({
-    where: { id, orgId: user.orgId },
-  });
-  if (!existing) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const rawKey = generateApiKey();
-  const keyHash = await hashApiKey(rawKey);
-
-  const updated = await prisma.apiKey.update({
-    where: { id },
-    data: { keyHash, revokedAt: null },
-  });
-
-  return NextResponse.json({
-    id: updated.id,
-    name: updated.name,
-    key: rawKey,
-    scopes: updated.scopes,
-    expiresAt: updated.expiresAt?.toISOString() || null,
-  });
+  return NextResponse.json(
+    { error: API_KEYS_NOT_IMPLEMENTED },
+    { status: 501 }
+  );
 }

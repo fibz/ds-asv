@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { hashApiKey } from "@/lib/auth/api-keys";
+import { prisma } from "@/lib/prisma-client";
+import { hashApiKey, splitKeyHash } from "@/lib/auth/api-keys";
 
 export type Scope =
   | "read:scans"
@@ -35,10 +35,24 @@ export async function requireScope(
     };
   }
 
-  const keyHash = await hashApiKey(rawKey);
-  const apiKey = await prisma.apiKey.findUnique({ where: { keyHash } });
+  // Stored hashes are salted (`salt$hash`), so the presented key cannot be
+  // precomputed into an indexed lookup value. Fetch the small set of active
+  // keys and verify the presented key against each row's salt.
+  const candidates = await prisma.apiKey.findMany({
+    where: { revokedAt: null },
+  });
+  let apiKey: (typeof candidates)[number] | null = null;
+  for (const candidate of candidates) {
+    const parts = splitKeyHash(candidate.keyHash);
+    if (!parts) continue; // legacy unsalted hash — no salt to verify against
+    const computed = await hashApiKey(rawKey, parts.salt);
+    if (computed === candidate.keyHash) {
+      apiKey = candidate;
+      break;
+    }
+  }
 
-  if (!apiKey || apiKey.revokedAt) {
+  if (!apiKey) {
     return {
       ok: false,
       response: Response.json({ error: "Invalid API key" }, { status: 401 }),

@@ -1,118 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
-import { prisma } from "@/lib/prisma";
-import { maskApiKey } from "@/lib/auth/api-keys";
+import { API_KEYS_NOT_IMPLEMENTED } from "@/lib/auth/api-keys";
+import { provisionKeycloakUser } from "@/lib/auth/keycloak";
 
-function serialize(key: {
-  id: string;
-  name: string;
-  keyHash: string;
-  scopes: string[];
-  lastUsedAt: Date | null;
-  expiresAt: Date | null;
-  revokedAt: Date | null;
-  createdAt: Date;
-}) {
-  return {
-    id: key.id,
-    name: key.name,
-    maskedKey: maskApiKey(key.keyHash),
-    scopes: key.scopes,
-    lastUsedAt: key.lastUsedAt?.toISOString() || null,
-    expiresAt: key.expiresAt?.toISOString() || null,
-    revokedAt: key.revokedAt?.toISOString() || null,
-    createdAt: key.createdAt.toISOString(),
-  };
-}
+/**
+ * ApiKey RLS policies + grants are deliberately deferred to Phase 2 (first
+ * task). asv_app has NO grants on "ApiKey" (fail-closed by design), so the
+ * old per-key read/rename/revoke flow here would 500 with permission-denied
+ * the moment it touched the table. Until Phase 2 revives the surface,
+ * authentication is still enforced (401), then the route answers an explicit,
+ * self-documenting 501 instead of an opaque 500.
+ */
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { userId } = await auth();
-  if (!userId) {
+export async function GET(request: NextRequest) {
+  const keycloakUser = await provisionKeycloakUser(request);
+  if (!keycloakUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const user = await prisma.user.findUnique({ where: { clerkId: userId } });
-  if (!user || !user.orgId || user.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const { id } = await params;
-  const key = await prisma.apiKey.findFirst({
-    where: { id, orgId: user.orgId },
-  });
-
-  if (!key) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  return NextResponse.json(serialize(key));
+  return NextResponse.json(
+    { error: API_KEYS_NOT_IMPLEMENTED },
+    { status: 501 }
+  );
 }
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { userId } = await auth();
-  if (!userId) {
+export async function PATCH(request: NextRequest) {
+  const keycloakUser = await provisionKeycloakUser(request);
+  if (!keycloakUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const user = await prisma.user.findUnique({ where: { clerkId: userId } });
-  if (!user || !user.orgId || user.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const { id } = await params;
-  const body = await request.json();
-  const { name, scopes } = body;
-
-  const existing = await prisma.apiKey.findFirst({
-    where: { id, orgId: user.orgId },
-  });
-  if (!existing) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const updated = await prisma.apiKey.update({
-    where: { id },
-    data: {
-      name: name ?? existing.name,
-      scopes: scopes ?? existing.scopes,
-    },
-  });
-
-  return NextResponse.json(serialize(updated));
+  return NextResponse.json(
+    { error: API_KEYS_NOT_IMPLEMENTED },
+    { status: 501 }
+  );
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { userId } = await auth();
-  if (!userId) {
+export async function DELETE(request: NextRequest) {
+  const keycloakUser = await provisionKeycloakUser(request);
+  if (!keycloakUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const user = await prisma.user.findUnique({ where: { clerkId: userId } });
-  if (!user || !user.orgId || user.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const { id } = await params;
-  const existing = await prisma.apiKey.findFirst({
-    where: { id, orgId: user.orgId },
-  });
-  if (!existing) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  await prisma.apiKey.update({
-    where: { id },
-    data: { revokedAt: new Date() },
-  });
-
-  return new NextResponse(null, { status: 204 });
+  return NextResponse.json(
+    { error: API_KEYS_NOT_IMPLEMENTED },
+    { status: 501 }
+  );
 }

@@ -15,6 +15,7 @@ venv/
 
 # Prisma generated client
 prisma/generated/
+portal/src/lib/generated/
 
 # Env & secrets
 .env
