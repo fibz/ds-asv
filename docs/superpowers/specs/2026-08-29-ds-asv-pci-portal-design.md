@@ -65,7 +65,7 @@ legal validation before production.
 ```
 ┌─────────────────────────── Control Plane (portal/) ──────────────────────────┐
 │  Next.js App Router                       PostgreSQL (RLS)                  │
-│  ├─ Clerk auth (session) + API key + scopes   organization_id everywhere    │
+│  ├─ Keycloak auth (session) + API key + scopes  organization_id everywhere   │
 │  ├─ Organization / membership / QSA-reseller  + row-level security           │
 │  ├─ Asset inventory + verification                                            │
 │  ├─ Scope version builder + attestation                                       │
@@ -158,7 +158,7 @@ Every table writing user/tenant data carries `organization_id`; RLS enforced.
 ## 5. ASV scan flow (end-to-end)
 
 ```
-1. Merchant logs in (Clerk + MFA)                    [control plane]
+1. Merchant logs in (Keycloak + MFA)                [control plane]
 2. Adds an asset (IP / CIDR / FQDN)
 3. Verifies ownership (DNS TXT / HTTP challenge)     [control plane]
 4. Schedules a scan (input IP/domain + date)         [control plane]
@@ -243,8 +243,27 @@ Wiring:
 - **Python 3.13 + FastAPI** (scanner service)
 - **Celery + Redis** (async scan execution)
 - **MinIO / S3** (evidence storage)
-- **Clerk** (session auth for UI) + **X-API-Key + scopes** (machine auth)
+- **Keycloak** (self-hosted OIDC session auth for UI) + **X-API-Key + scopes** (machine auth)
+- **Hashicorp Vault** (credentials/secrets, per-tenant namespaces)
 - **NVD mirror** (self-hosted CVE DB)
+
+---
+
+## 7.1 Resources & environment
+
+| Resource | Available |
+|---|---|
+| Compute | Cloud account (AWS / GCP / Azure) — SaaS hosted here |
+| Scanner egress | Cloud scanners with static/whitelisted egress IPs (NAT gateway or elastic IPs) |
+| Identity | Self-hosted **Keycloak** (OIDC/OAuth2, MFA, roles) — not Clerk |
+| Secrets | **Hashicorp Vault** (self-hosted) — scan credentials, per-tenant |
+| Evidence | **MinIO / S3** object storage |
+| Budget | Comfortable — may use managed services to save time |
+
+This replaces the earlier Clerk choice: **Keycloak** is the session IdP for the dashboard UI;
+the existing **X-API-Key + scopes** model stays for machine-to-machine API access. The
+`compliance-engine` Clerk integration is replaced with Keycloak (OIDC code flow + JWT
+validation).
 
 ---
 
@@ -261,7 +280,7 @@ Wiring:
 | kilo-asv portal + asv-auth | — | — | ❌ throw away (keep JWT/pbkdf2 primitives) |
 | compliance-engine OpenAPI spec | ✅ | — | — |
 | compliance-engine Prisma schema | ✅ | — | — |
-| compliance-engine api-key mgmt | ✅ | — | — |
+| compliance-engine api-key mgmt | ✅ (swap Clerk→Keycloak for session auth) | ✅ | — |
 | compliance-engine mock dashboards | — | — | ❌ throw away |
 | onboarding design doc | ✅ | — | — |
 | t3/portal report-summary logic | ✅ (risk rating, severity counts) | — | — |
