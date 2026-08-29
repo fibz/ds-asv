@@ -256,4 +256,46 @@ describe("cross-tenant isolation (Phase 1 exit criterion)", () => {
     );
     expect(orgRows.n).toBe(0);
   });
+
+  it("(g) append-only audit: asv_app cannot UPDATE or DELETE audit rows (PCI Req 10)", async () => {
+    // find the seeded A-only audit row id (contexted read — SELECT is granted)
+    let auditId: string | null = null;
+    await withTenant(ORG_A, async (tx) => {
+      const ev = await tx.auditEvent.findFirst({
+        where: { action: "audit.a.only" },
+      });
+      expect(ev).not.toBeNull();
+      auditId = ev!.id;
+    });
+    expect(auditId).not.toBeNull();
+
+    // Migration 20260829160000_audit_append_only REVOKEd UPDATE/DELETE on
+    // "AuditEvent" FROM asv_app, so the audit log is append-only by DB grant,
+    // not just by app convention (Task 7 deliverable; PCI DSS Req 10). Both a
+    // tampering UPDATE and a destroying DELETE must be denied with SQLSTATE
+    // 42501 — the same privilege-denial SQLSTATE the driver surfaces for a
+    // grant-level denial (the helper asserts exactly that). Each statement
+    // runs in its OWN transaction: a failed statement aborts the transaction.
+    await expectRlsRejection(
+      withTenant(ORG_A, (tx) =>
+        tx.auditEvent.update({
+          where: { id: auditId! },
+          data: { reason: "tampered" },
+        })
+      )
+    );
+    await expectRlsRejection(
+      withTenant(ORG_A, (tx) => tx.auditEvent.delete({ where: { id: auditId! } }))
+    );
+
+    // proof of integrity via the ADMIN connection (RLS-bypassing): the row
+    // still exists, untouched — neither the UPDATE nor the DELETE landed
+    const [rows] = await adminQuery<{ n: number; reason: string | null }>(
+      `SELECT count(*)::int AS n, min("reason") AS reason FROM "AuditEvent"
+       WHERE "organizationId" = $1 AND action = $2`,
+      [ORG_A, "audit.a.only"]
+    );
+    expect(rows.n).toBe(1);
+    expect(rows.reason).toBeNull();
+  });
 });
