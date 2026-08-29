@@ -28,6 +28,7 @@
 ## Working agreements (user explicitly called these out)
 
 1. **NEVER report system state from memory or earlier in the session.** Git status, test counts, push state, "clean" — always re-run the check at that moment. Cache-recall of status is a bug.
+   - **Exception — key data:** durable facts recorded in AGENTS.md / MEMORY.md (repo URL, DB roles/ports, next-phase, follow-up lists, backup paths, credentials locations) are authoritative and may be cited without re-verification — that's why they were written down. The rule targets *live system state*, not stored project facts. If a stored fact looks stale or contradicts a fresh check, the fresh check wins and the file should be updated.
 2. **Check the actual error/output before responding** — don't guess, don't offer menus of guesses.
 3. **Shorter, plainer answers.** User prefers direct + visual. No walls of text, no status-table spam.
 4. **Make calls that are mine to make.** Only ask when only the user can answer.
