@@ -8,72 +8,78 @@ datasource db {
 }
 
 model Organization {
-  id            String        @id @default(cuid())
+  id            String                   @id @default(cuid())
   name          String
-  clerkId       String        @unique
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  clerkId       String?                  @unique
+  parentOrgId   String?
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+  parent        Organization?            @relation("OrgTree", fields: [parentOrgId], references: [id])
+  children      Organization[]           @relation("OrgTree")
   compliance    Compliance[]
   scans         Scan[]
   wafConfigs    WafConfig[]
   siemAlerts    SiemAlert[]
   apiKeys       ApiKey[]
+  memberships   OrganizationMembership[]
+  contacts      Contact[]
+  auditEvents   AuditEvent[]
 }
 
 model Compliance {
-  id            String   @id @default(cuid())
+  id            String        @id @default(cuid())
   orgId         String
-  framework     String   // SOC2, PCI_DSS, PCI_SSS
-  status        String   @default("IN_PROGRESS") // COMPLIANT, NON_COMPLIANT, IN_PROGRESS
+  framework     String        // SOC2, PCI_DSS, PCI_SSS
+  status        String        @default("IN_PROGRESS") // COMPLIANT, NON_COMPLIANT, IN_PROGRESS
   lastAudit     DateTime?
-  controls      Json     // Compliance control results
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  controls      Json          // Compliance control results
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  organization  Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([framework])
 }
 
 model Scan {
-  id            String   @id @default(cuid())
+  id            String        @id @default(cuid())
   orgId         String
-  type          String   // ASV, VULNERABILITY, COMPLIANCE
-  status        String   @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED
-  target        String   // Target IP/URL
+  type          String        // ASV, VULNERABILITY, COMPLIANCE
+  status        String        @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED
+  target        String        // Target IP/URL
   results       Json?
-  startedAt     DateTime @default(now())
+  startedAt     DateTime      @default(now())
   completedAt   DateTime?
-  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  organization  Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([status])
 }
 
 model WafConfig {
-  id            String   @id @default(cuid())
+  id            String        @id @default(cuid())
   orgId         String
   name          String
-  rules         Json     // WAF rules configuration
-  enabled       Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  rules         Json          // WAF rules configuration
+  enabled       Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  organization  Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
 }
 
 model SiemAlert {
-  id            String   @id @default(cuid())
+  id            String        @id @default(cuid())
   orgId         String
-  severity      String   // LOW, MEDIUM, HIGH, CRITICAL
-  source        String   // Wazuh, Custom, T3MP3ST
+  severity      String        // LOW, MEDIUM, HIGH, CRITICAL
+  source        String        // Wazuh, Custom, T3MP3ST
   title         String
   description   String?
   metadata      Json?
-  resolved      Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  resolved      Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+  organization  Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([severity])
@@ -81,27 +87,76 @@ model SiemAlert {
 }
 
 model User {
-  id            String   @id @default(cuid())
-  clerkId       String   @unique
+  id            String                   @id @default(cuid())
+  idpId         String                   @unique
   email         String
   orgId         String?
-  role          String   @default("member") // admin, member, viewer
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  role          String                   @default("member") // admin, member, viewer
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+  memberships   OrganizationMembership[]
+}
+
+model OrganizationMembership {
+  id             String        @id @default(cuid())
+  userId         String
+  organizationId String
+  role           String        @default("member") // organization_owner, security_admin, asset_manager, scan_operator, report_viewer, billing_admin
+  status         String        @default("active")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+model Contact {
+  id              String        @id @default(cuid())
+  organizationId  String
+  type            String        // business, security, billing, emergency
+  name            String
+  email           String
+  phone           String?
+  escalationOrder Int           @default(1)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+model AuditEvent {
+  id             String        @id @default(cuid())
+  organizationId String
+  actorUserId    String
+  action         String
+  resourceType   String
+  resourceId     String?
+  before         Json?
+  after          Json?
+  reason         String?
+  requestId      String?
+  createdAt      DateTime      @default(now())
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([createdAt])
 }
 
 model ApiKey {
-  id            String   @id @default(cuid())
+  id            String        @id @default(cuid())
   name          String
-  keyHash       String   @unique
+  keyHash       String        @unique
   scopes        String[]
   orgId         String
   lastUsedAt    DateTime?
   expiresAt     DateTime?
   revokedAt     DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  organization  Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([keyHash])
