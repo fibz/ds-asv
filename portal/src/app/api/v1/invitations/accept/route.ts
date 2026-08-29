@@ -34,7 +34,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const membership = await acceptInvitation(token, user.id);
+    // The identity's email binds the token to its intended recipient: a
+    // forwarded invitation cannot be redeemed by someone else.
+    const membership = await acceptInvitation(token, user.id, user.email);
     return NextResponse.json(membership, { status: 201 });
   } catch {
     return NextResponse.json(

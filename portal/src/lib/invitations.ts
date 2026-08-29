@@ -67,9 +67,22 @@ export async function createInvitation(
 
 /**
  * Redeems an invitation for the accepting user, creating their membership in
- * the inviter's organization. Throws for unknown, expired, or already-used
- * tokens (the accept route maps that to 400). Single-use: once acceptedAt is
- * set the token can never be redeemed again.
+ * the inviter's organization. Throws for unknown, expired, already-used, or
+ * email-mismatched tokens (the accept route maps that to 400).
+ *
+ * Email binding: `email` is the authenticated identity's email (from the
+ * verified IdP claims, passed by the accept route) and is compared to the
+ * invitation's intended recipient — a forwarded token intended for
+ * alice@corp.com cannot be redeemed by anyone else.
+ *
+ * Single-use is enforced by an ATOMIC claim gate (not by a check-then-update):
+ * a conditional `updateMany where { id, acceptedAt: null }` sets acceptedAt
+ * and returns the affected row count. At READ COMMITTED, concurrent redeemers
+ * serialize on the row lock and the WHERE clause is re-evaluated after the
+ * winner commits, so exactly one transaction ever observes count = 1 — the
+ * membership @@unique([userId, organizationId]) alone would NOT catch two
+ * DIFFERENT users redeeming the same token. A failed membership INSERT rolls
+ * the whole transaction (including the claim) back.
  *
  * RLS handling — the acceptor-without-membership case:
  *
@@ -83,8 +96,9 @@ export async function createInvitation(
  *    scoped to the token hash, which is the SHA-256 of 32 random bytes
  *    (unguessable), so this is capability-based, not a cross-tenant channel.
  * 2. Once the invitation is found, the tenant context is bound to the
- *    INVITATION's organizationId (the inviter's org) and the membership
- *    INSERT + invitation UPDATE run under that context.
+ *    INVITATION's organizationId (the inviter's org) BEFORE the claim gate,
+ *    so the UPDATE satisfies the invitation_tenant_isolation policy; the
+ *    membership INSERT then runs under that same context.
  *
  * All statements run on the one transaction connection, so the
  * transaction-scoped session variables are guaranteed visible (see
@@ -92,7 +106,8 @@ export async function createInvitation(
  */
 export async function acceptInvitation(
   token: string,
-  userId: string
+  userId: string,
+  email: string
 ): Promise<OrganizationMembership> {
   const tokenHash = hashToken(token);
   return prisma.$transaction(async (tx) => {
@@ -101,25 +116,33 @@ export async function acceptInvitation(
       tokenHash
     );
     const invitation = await tx.invitation.findUnique({ where: { tokenHash } });
-    if (
-      !invitation ||
-      invitation.acceptedAt !== null ||
-      invitation.expiresAt.getTime() < Date.now()
-    ) {
+    if (!invitation) {
+      throw new Error("Invalid, expired, or already-used invitation");
+    }
+    if (invitation.email.toLowerCase() !== email.toLowerCase()) {
+      throw new Error("Invitation email does not match the accepting identity");
+    }
+    if (invitation.expiresAt.getTime() < Date.now()) {
       throw new Error("Invalid, expired, or already-used invitation");
     }
 
     await setRlsContext(invitation.organizationId, tx);
+
+    // Atomic single-use gate: only an unconsumed invitation can be claimed.
+    const claimed = await tx.invitation.updateMany({
+      where: { id: invitation.id, acceptedAt: null },
+      data: { acceptedAt: new Date() },
+    });
+    if (claimed.count !== 1) {
+      throw new Error("Invalid, expired, or already-used invitation");
+    }
+
     const membership = await tx.organizationMembership.create({
       data: {
         userId,
         organizationId: invitation.organizationId,
         role: invitation.role,
       },
-    });
-    await tx.invitation.update({
-      where: { id: invitation.id },
-      data: { acceptedAt: new Date() },
     });
     return membership;
   });

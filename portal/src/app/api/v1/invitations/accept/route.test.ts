@@ -86,8 +86,9 @@ describe("POST /api/v1/invitations/accept (Bearer)", () => {
     const body = await response.json();
     expect(body.role).toBe("security_admin");
     expect(body.organizationId).toBe("org_1");
-    // the userId bound to the accept is the authenticated identity, never the body
-    expect(acceptInvitation).toHaveBeenCalledWith("tok_xyz", "u_invitee_1");
+    // the userId + email bound to the accept are the authenticated identity,
+    // never the body
+    expect(acceptInvitation).toHaveBeenCalledWith("tok_xyz", "u_invitee_1", "new@user.com");
   });
 
   it("returns 401 without a Bearer token", async () => {
@@ -114,6 +115,25 @@ describe("POST /api/v1/invitations/accept (Bearer)", () => {
       bearerRequest({ body: JSON.stringify({ token: "used-or-expired" }) })
     );
     expect(response.status).toBe(400);
+  });
+
+  it("returns 400 when the invitation email does not match the authenticated identity", async () => {
+    vi.mocked(jwtVerify).mockResolvedValueOnce({
+      payload: CLAIMS,
+      protectedHeader: {},
+    } as never);
+    vi.mocked(prisma.user.create).mockResolvedValueOnce(userRow() as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(userRow() as never);
+    vi.mocked(acceptInvitation).mockRejectedValueOnce(
+      new Error("Invitation email does not match the accepting identity")
+    );
+
+    const response = await POST(
+      bearerRequest({ body: JSON.stringify({ token: "forwarded-token" }) })
+    );
+    expect(response.status).toBe(400);
+    // the identity email was passed to the lib gate
+    expect(acceptInvitation).toHaveBeenCalledWith("forwarded-token", "u_invitee_1", "new@user.com");
   });
 
   it("returns 400 when the token is missing", async () => {
