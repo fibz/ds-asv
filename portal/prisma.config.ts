@@ -1,6 +1,18 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+// CLI/migrations must run as the admin role (`asv`, superuser, bypasses RLS);
+// the app runtime connects as `asv_app` via DATABASE_URL (subject to RLS).
+// Fail fast: silently falling back to DATABASE_URL would run DDL as the
+// RLS-limited role and fail confusingly.
+const cliUrl = process.env.ADMIN_DATABASE_URL;
+if (!cliUrl) {
+  throw new Error(
+    "ADMIN_DATABASE_URL is not set — prisma CLI must connect as the admin role " +
+      "(asv), not the RLS-limited asv_app. See portal/.env and README."
+  );
+}
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
@@ -8,8 +20,6 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    // CLI/migrations run as the admin role (superuser, bypasses RLS); the app
-    // runtime connects as `asv_app` via DATABASE_URL (subject to RLS).
-    url: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL ?? "",
+    url: cliUrl,
   },
 });

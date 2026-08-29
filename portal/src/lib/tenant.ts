@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma-client";
-import type { Prisma } from "@/lib/generated/prisma";
+import type { Prisma, Organization } from "@/lib/generated/prisma";
 
 export type Role =
   | "organization_owner"
@@ -77,4 +77,27 @@ export async function setRlsContext(
 ): Promise<void> {
   const client = tx ?? prisma;
   await client.$executeRawUnsafe(`SELECT set_config('app.tenant_id', $1, true)`, organizationId);
+}
+
+/**
+ * Returns the parent org row of the org currently bound to the RLS session
+ * variable (`app.tenant_id`), or null when the tenant has no parent.
+ *
+ * The Organization RLS policy intentionally grants only own-row + direct-child
+ * reads (a same-table EXISTS subquery for the parent hits PostgreSQL's
+ * infinite-recursion guard). This helper closes that gap via the SECURITY
+ * DEFINER function `get_org_parent()` (migration 20260829142337_rls_hardening):
+ * the function reads ONLY the session variable — it takes no parameters — so it
+ * cannot be pointed at an arbitrary org and cannot become a cross-tenant read
+ * channel. Like setRlsContext it must be called inside the same transaction
+ * that set the context (pass `tx`), so the session variable is visible.
+ */
+export async function getParentOrg(
+  tx?: Prisma.TransactionClient
+): Promise<Organization | null> {
+  const client = tx ?? prisma;
+  const rows = await client.$queryRaw<Organization[]>`
+    SELECT * FROM public.get_org_parent()
+  `;
+  return rows[0] ?? null;
 }

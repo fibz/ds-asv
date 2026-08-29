@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { Client } from "pg";
 import { prisma } from "@/lib/prisma-client";
-import { resolveTenantContext, setRlsContext, getAppMode } from "@/lib/tenant";
+import { resolveTenantContext, setRlsContext, getAppMode, getParentOrg } from "@/lib/tenant";
 import type { Prisma } from "@/lib/generated/prisma";
 
 // Fixed ids make re-runs idempotent and the isolation assertions deterministic.
@@ -39,13 +40,27 @@ async function wipeTenant(organizationId: string): Promise<void> {
   });
 }
 
+/**
+ * User-row lifecycle must run as the ADMIN role: asv_app has no DELETE on
+ * "User" (fail-closed grant surface) and RLS context is irrelevant there.
+ */
+async function adminDeleteUsers(ids: string[]): Promise<void> {
+  const admin = new Client({ connectionString: process.env.ADMIN_DATABASE_URL });
+  await admin.connect();
+  try {
+    await admin.query(`DELETE FROM "User" WHERE id = ANY($1::text[])`, [ids]);
+  } finally {
+    await admin.end();
+  }
+}
+
 describe("tenant context + row-level security", () => {
   beforeAll(async () => {
     // wipe any leftovers from a previous run
     await wipeTenant(ORG_A_CHILD);
     await wipeTenant(ORG_A);
     await wipeTenant(ORG_B);
-    await prisma.user.deleteMany({ where: { id: { in: [USER_A, USER_B] } } });
+    await adminDeleteUsers([USER_A, USER_B]);
 
     // seed tenant A and tenant B (org + user + membership + contact each)
     await withTenant(ORG_A, async (tx) => {
@@ -68,13 +83,19 @@ describe("tenant context + row-level security", () => {
         data: { organizationId: ORG_B, type: "business", name: "B-contact", email: "b@b.com" },
       });
     });
+    // QSA flow: tenant A creates a child org (parentOrgId = tenant) — WITH CHECK
+    await withTenant(ORG_A, async (tx) => {
+      await tx.organization.create({
+        data: { id: ORG_A_CHILD, name: "A-child", parentOrgId: ORG_A },
+      });
+    });
   });
 
   afterAll(async () => {
     await wipeTenant(ORG_A_CHILD);
     await wipeTenant(ORG_A);
     await wipeTenant(ORG_B);
-    await prisma.user.deleteMany({ where: { id: { in: [USER_A, USER_B] } } });
+    await adminDeleteUsers([USER_A, USER_B]);
     await prisma.$disconnect();
   });
 
@@ -137,12 +158,6 @@ describe("tenant context + row-level security", () => {
   });
 
   it("org policy: own org + direct children visible, foreign org invisible", async () => {
-    // QSA flow: tenant A creates a child org (parentOrgId = tenant)
-    await withTenant(ORG_A, async (tx) => {
-      await tx.organization.create({
-        data: { id: ORG_A_CHILD, name: "A-child", parentOrgId: ORG_A },
-      });
-    });
     await withTenant(ORG_A, async (tx) => {
       const orgs = await tx.organization.findMany({ orderBy: { id: "asc" } });
       expect(orgs.map((o) => o.id).sort()).toEqual([ORG_A, ORG_A_CHILD]);
@@ -153,5 +168,29 @@ describe("tenant context + row-level security", () => {
         tx.organization.create({ data: { id: "org_zzzz_0009", name: "Z" } })
       )
     ).rejects.toThrow();
+  });
+
+  it("parent chain: a child tenant reads its parent org row via the session-bound helper", async () => {
+    await withTenant(ORG_A_CHILD, async (tx) => {
+      // helper returns the parent row of the org bound to the session variable
+      const parent = await getParentOrg(tx);
+      expect(parent?.id).toBe(ORG_A);
+      expect(parent?.name).toBe("Tenant A");
+
+      // the parent row is NOT reachable through the plain RLS policy path...
+      expect(await tx.organization.findUnique({ where: { id: ORG_A } })).toBeNull();
+
+      // ...and an unrelated org stays invisible through every path
+      expect(await tx.organization.findUnique({ where: { id: ORG_B } })).toBeNull();
+    });
+  });
+
+  it("parent chain: getParentOrg returns null when the tenant has no parent", async () => {
+    await withTenant(ORG_A, async (tx) => {
+      expect(await getParentOrg(tx)).toBeNull();
+    });
+    await withTenant(ORG_B, async (tx) => {
+      expect(await getParentOrg(tx)).toBeNull();
+    });
   });
 });
