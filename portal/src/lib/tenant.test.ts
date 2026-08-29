@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "pg";
 import { prisma } from "@/lib/prisma-client";
-import { resolveTenantContext, setRlsContext, getAppMode, getParentOrg } from "@/lib/tenant";
+import {
+  resolveTenantContext,
+  setRlsContext,
+  getAppMode,
+  getParentOrg,
+  isRole,
+} from "@/lib/tenant";
 import type { Prisma } from "@/lib/generated/prisma";
 
 // Fixed ids make re-runs idempotent and the isolation assertions deterministic.
@@ -44,14 +50,18 @@ async function wipeTenant(organizationId: string): Promise<void> {
  * User-row lifecycle must run as the ADMIN role: asv_app has no DELETE on
  * "User" (fail-closed grant surface) and RLS context is irrelevant there.
  */
-async function adminDeleteUsers(ids: string[]): Promise<void> {
+async function adminQuery(sql: string, params?: unknown[]): Promise<void> {
   const admin = new Client({ connectionString: process.env.ADMIN_DATABASE_URL });
   await admin.connect();
   try {
-    await admin.query(`DELETE FROM "User" WHERE id = ANY($1::text[])`, [ids]);
+    await admin.query(sql, params);
   } finally {
     await admin.end();
   }
+}
+
+function adminDeleteUsers(ids: string[]): Promise<void> {
+  return adminQuery(`DELETE FROM "User" WHERE id = ANY($1::text[])`, [ids]);
 }
 
 describe("tenant context + row-level security", () => {
@@ -192,5 +202,52 @@ describe("tenant context + row-level security", () => {
     await withTenant(ORG_B, async (tx) => {
       expect(await getParentOrg(tx)).toBeNull();
     });
+  });
+
+  it("resolveTenantContext throws on an out-of-union membership role instead of silently casting", async () => {
+    // Seed a user + membership with a bogus role via the ADMIN connection —
+    // this bypasses app-layer validation and RLS, exactly how a bad value
+    // could land in the DB. A silent `as Role` cast would have produced a
+    // TenantContext with unknown permission implications.
+    await adminQuery(
+      `INSERT INTO "User" (id, "idpId", email, "updatedAt")
+       VALUES ('user_bad_0001', 'kc-user-bad', 'bad@bad.com', now())
+       ON CONFLICT (id) DO NOTHING`
+    );
+    await adminQuery(
+      `INSERT INTO "OrganizationMembership" (id, "userId", "organizationId", role, "updatedAt")
+       VALUES ('mem_bad_0001', 'user_bad_0001', $1, 'superuser', now())
+       ON CONFLICT (id) DO NOTHING`,
+      [ORG_A]
+    );
+    await expect(resolveTenantContext("user_bad_0001")).rejects.toThrow(
+      /Invalid membership role: superuser/
+    );
+    // teardown: deleting the user cascades the bogus membership
+    await adminDeleteUsers(["user_bad_0001"]);
+  });
+});
+
+describe("isRole (6-role union guard)", () => {
+  it("accepts exactly the six membership roles", () => {
+    for (const role of [
+      "organization_owner",
+      "security_admin",
+      "asset_manager",
+      "scan_operator",
+      "report_viewer",
+      "billing_admin",
+    ]) {
+      expect(isRole(role)).toBe(true);
+    }
+  });
+
+  it("rejects anything outside the union", () => {
+    expect(isRole("admin")).toBe(false);
+    expect(isRole("member")).toBe(false);
+    expect(isRole("superuser")).toBe(false);
+    expect(isRole(undefined)).toBe(false);
+    expect(isRole(null)).toBe(false);
+    expect(isRole(42)).toBe(false);
   });
 });

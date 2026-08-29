@@ -1,24 +1,18 @@
 import { randomBytes, createHash } from "crypto";
 import { prisma } from "@/lib/prisma-client";
-import { setRlsContext, type Role } from "@/lib/tenant";
+import { setRlsContext, ROLES, type Role } from "@/lib/tenant";
 import type { OrganizationMembership } from "@/lib/generated/prisma";
 
 /** Invitations expire 24 hours after creation. */
 const INVITATION_TTL_MS = 24 * 3600 * 1000;
 
 /**
- * The 6-role union (must stay in sync with `Role` in @/lib/tenant). Used by the
- * create route for its 400 validation and by createInvitation as defense in
- * depth — a role outside the union can never be stored.
+ * The 6-role union, aliased from @/lib/tenant's ROLES (single source of
+ * truth). Used by the create route for its 400 validation and by
+ * createInvitation as defense in depth — a role outside the union can never
+ * be stored.
  */
-export const INVITABLE_ROLES: readonly Role[] = [
-  "organization_owner",
-  "security_admin",
-  "asset_manager",
-  "scan_operator",
-  "report_viewer",
-  "billing_admin",
-];
+export const INVITABLE_ROLES: readonly Role[] = ROLES;
 
 /**
  * Only the SHA-256 digest of the raw token is ever stored, so a leaked DB row

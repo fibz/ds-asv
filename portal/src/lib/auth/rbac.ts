@@ -1,10 +1,5 @@
 import type { TenantContext, Role } from "@/lib/tenant";
 
-const ROLE_RANK: Record<Role, number> = {
-  report_viewer: 1, billing_admin: 2, scan_operator: 3,
-  asset_manager: 4, security_admin: 5, organization_owner: 6,
-};
-
 export function hasRole(user: TenantContext, ...roles: Role[]): boolean {
   return roles.includes(user.role);
 }

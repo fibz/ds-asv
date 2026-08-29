@@ -9,6 +9,27 @@ export type Role =
   | "report_viewer"
   | "billing_admin";
 
+/**
+ * The 6-role union. Single source of truth — INVITABLE_ROLES in
+ * @/lib/invitations aliases this list.
+ */
+export const ROLES: readonly Role[] = [
+  "organization_owner",
+  "security_admin",
+  "asset_manager",
+  "scan_operator",
+  "report_viewer",
+  "billing_admin",
+];
+
+/** Type guard: true only for the 6 valid membership roles. */
+export function isRole(value: unknown): value is Role {
+  return (
+    typeof value === "string" &&
+    (ROLES as readonly string[]).includes(value)
+  );
+}
+
 export interface TenantContext {
   userId: string;
   organizationId: string;
@@ -41,10 +62,16 @@ export async function resolveTenantContext(userId: string): Promise<TenantContex
     });
   });
   if (!membership) throw new Error("No active organization membership");
+  // Defense in depth: the DB column is a free-form String; a row with a role
+  // outside the 6-role union (e.g. corrupted seed data) must not be silently
+  // cast into a TenantContext with unknown permission implications.
+  if (!isRole(membership.role)) {
+    throw new Error(`Invalid membership role: ${membership.role}`);
+  }
   return {
     userId,
     organizationId: membership.organizationId,
-    role: membership.role as Role,
+    role: membership.role,
     isStaff: false,
     appMode: getAppMode(),
   };

@@ -56,6 +56,10 @@ export async function verifyToken(
   const { payload } = await jwtVerify(token, getJwks(), {
     issuer: keycloakIssuer(),
     audience: keycloakClientId(),
+    // Pin the algorithm family: only RS256-signed tokens are accepted
+    // (Keycloak realm default). Defense in depth — without this, jose would
+    // accept whatever alg the token header declares (e.g. alg=none).
+    algorithms: ["RS256"],
   });
   return payload as Record<string, unknown>;
 }

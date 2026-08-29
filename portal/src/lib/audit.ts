@@ -29,8 +29,8 @@ export async function recordAudit(
   action: string,
   resourceType: string,
   resourceId?: string,
-  before?: unknown,
-  after?: unknown,
+  before?: Prisma.InputJsonValue,
+  after?: Prisma.InputJsonValue,
   reason?: string
 ) {
   return prisma.$transaction(async (tx) => {
@@ -42,8 +42,8 @@ export async function recordAudit(
         action,
         resourceType,
         resourceId,
-        before: before != null ? (before as Prisma.InputJsonValue) : undefined,
-        after: after != null ? (after as Prisma.InputJsonValue) : undefined,
+        before: before != null ? before : undefined,
+        after: after != null ? after : undefined,
         reason,
       },
     });

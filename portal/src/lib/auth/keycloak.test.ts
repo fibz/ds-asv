@@ -75,11 +75,12 @@ describe("keycloak auth", () => {
     expect(createRemoteJWKSet).toHaveBeenCalledWith(
       new URL(`${ISSUER}/protocol/openid-connect/certs`)
     );
-    // …and verification must pin BOTH issuer and audience (client id).
+    // …and verification must pin issuer, audience (client id), and the
+    // RS256 algorithm family (defense in depth — never accept alg=none).
     expect(jwtVerify).toHaveBeenCalledWith(
       "a.b.c",
       { mock: "jwks" },
-      { issuer: ISSUER, audience: CLIENT_ID }
+      { issuer: ISSUER, audience: CLIENT_ID, algorithms: ["RS256"] }
     );
   });
 

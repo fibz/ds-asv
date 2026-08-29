@@ -38,7 +38,10 @@ export async function POST(request: NextRequest) {
     // forwarded invitation cannot be redeemed by someone else.
     const membership = await acceptInvitation(token, user.id, user.email);
     return NextResponse.json(membership, { status: 201 });
-  } catch {
+  } catch (error) {
+    // The generic 400 is the user-facing contract (never leak internals), but
+    // the original error must still reach the logs for diagnosability.
+    console.error("[invitations/accept] failed to redeem invitation", error);
     return NextResponse.json(
       { error: "Invalid, expired, or already-used invitation" },
       { status: 400 }
