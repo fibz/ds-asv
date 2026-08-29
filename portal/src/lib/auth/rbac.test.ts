@@ -19,4 +19,11 @@ describe("rbac", () => {
     const dev: TenantContext = { ...base, role: "report_viewer", appMode: "dev" };
     expect(can(dev, "scope.attest", { status: "submitted" })).toBe(true); // gates relaxed
   });
+  it("member.invite is limited to organization_owner and security_admin", () => {
+    const owner: TenantContext = { ...base, role: "organization_owner" };
+    expect(can(owner, "member.invite", {})).toBe(true); // owner may invite
+    expect(can(base, "member.invite", {})).toBe(true); // security_admin may invite
+    const viewer: TenantContext = { ...base, role: "report_viewer" };
+    expect(can(viewer, "member.invite", {})).toBe(false); // viewer may not
+  });
 });

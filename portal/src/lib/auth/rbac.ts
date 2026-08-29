@@ -15,6 +15,8 @@ export function can(user: TenantContext, action: string, resource: { status?: st
   if (user.isStaff) return true;
   if (action === "scope.attest") return hasRole(user, "organization_owner", "security_admin") && resource.status === "submitted";
   if (action === "scope.approve") return hasRole(user, "organization_owner", "security_admin");
+  // Task 6: inviting new members is limited to org owners and security admins.
+  if (action === "member.invite") return hasRole(user, "organization_owner", "security_admin");
   if (action === "asset.manage") return hasRole(user, "organization_owner", "security_admin", "asset_manager");
   if (action === "scan.run") return hasRole(user, "organization_owner", "security_admin", "scan_operator");
   if (action === "report.view") return hasRole(user, "organization_owner", "security_admin", "report_viewer");

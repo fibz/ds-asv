@@ -24,6 +24,7 @@ model Organization {
   memberships   OrganizationMembership[]
   contacts      Contact[]
   auditEvents   AuditEvent[]
+  invitations   Invitation[]
 }
 
 model Compliance {
@@ -160,4 +161,24 @@ model ApiKey {
 
   @@index([orgId])
   @@index([keyHash])
+}
+
+// Single-use, expiring membership invitations. The raw token is never stored —
+// only its SHA-256 hash (tokenHash). RLS: invitation_tenant_isolation policy
+// (organizationId = app.tenant_id) + invitation_bootstrap FOR SELECT policy
+// keyed on the presented token hash (the acceptor has no membership yet, so
+// no tenant context exists when the token is looked up — see migration
+// 20260829*_invitations and src/lib/invitations.ts).
+model Invitation {
+  id             String        @id @default(cuid())
+  organizationId String
+  email          String
+  role           String // one of the 6 Role values, validated at the app layer
+  tokenHash      String        @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
 }
