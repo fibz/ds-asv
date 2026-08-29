@@ -11,7 +11,7 @@
 -- migration/admin role `asv` keeps full DDL privileges for prisma migrate.
 --
 -- Connection split (see portal/.env):
---   DATABASE_URL      = postgresql://asv_app:asv@...  (app + tests, subject to RLS)
+--   DATABASE_URL      = postgresql://asv_app:CHANGE_ME@...  (app + tests, subject to RLS)
 --   ADMIN_DATABASE_URL = postgresql://asv:CHANGE_ME@...      (prisma CLI / migrate only)
 
 DO $$
