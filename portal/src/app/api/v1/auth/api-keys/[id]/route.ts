@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma-client";
 import { maskApiKey } from "@/lib/auth/api-keys";
-import { getKeycloakUser } from "@/lib/auth/keycloak";
+import { provisionKeycloakUser } from "@/lib/auth/keycloak";
 
 function serialize(key: {
   id: string;
@@ -29,7 +29,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const keycloakUser = await getKeycloakUser(request);
+  const keycloakUser = await provisionKeycloakUser(request);
   if (!keycloakUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -57,7 +57,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const keycloakUser = await getKeycloakUser(request);
+  const keycloakUser = await provisionKeycloakUser(request);
   if (!keycloakUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -95,7 +95,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const keycloakUser = await getKeycloakUser(request);
+  const keycloakUser = await provisionKeycloakUser(request);
   if (!keycloakUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

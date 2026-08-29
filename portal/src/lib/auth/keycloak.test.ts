@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { jwtVerify } from "jose";
+import { jwtVerify, createRemoteJWKSet } from "jose";
 import { prisma } from "@/lib/prisma-client";
 import {
   getUserFromClaims,
   verifyToken,
   provisionUserFromToken,
+  provisionKeycloakUser,
   getKeycloakUser,
 } from "@/lib/auth/keycloak";
 
@@ -25,6 +26,7 @@ vi.mock("@/lib/prisma-client", () => ({
 }));
 
 const ISSUER = "https://keycloak.example.test/realms/asv";
+const CLIENT_ID = "asv-portal";
 const CLAIMS = { sub: "kc-user-99", email: "c@d.com" };
 
 function fakeRequest(authorization: string | null) {
@@ -39,6 +41,7 @@ function fakeRequest(authorization: string | null) {
 describe("keycloak auth", () => {
   beforeEach(() => {
     vi.stubEnv("KEYCLOAK_ISSUER", ISSUER);
+    vi.stubEnv("KEYCLOAK_CLIENT_ID", CLIENT_ID);
   });
 
   afterEach(() => {
@@ -68,14 +71,26 @@ describe("keycloak auth", () => {
     } as never);
     const claims = await verifyToken("a.b.c");
     expect(claims).toEqual(CLAIMS);
-    expect(jwtVerify).toHaveBeenCalledWith("a.b.c", expect.anything(), {
-      issuer: ISSUER,
-    });
+    // The JWKS must be fetched from the issuer's OIDC certs endpoint…
+    expect(createRemoteJWKSet).toHaveBeenCalledWith(
+      new URL(`${ISSUER}/protocol/openid-connect/certs`)
+    );
+    // …and verification must pin BOTH issuer and audience (client id).
+    expect(jwtVerify).toHaveBeenCalledWith(
+      "a.b.c",
+      { mock: "jwks" },
+      { issuer: ISSUER, audience: CLIENT_ID }
+    );
   });
 
   it("fails closed when the Keycloak issuer is not configured", async () => {
     vi.stubEnv("KEYCLOAK_ISSUER", "");
     await expect(verifyToken("a.b.c")).rejects.toThrow(/KEYCLOAK_ISSUER/);
+  });
+
+  it("fails closed when the Keycloak client id is not configured", async () => {
+    vi.stubEnv("KEYCLOAK_CLIENT_ID", "");
+    await expect(verifyToken("a.b.c")).rejects.toThrow(/KEYCLOAK_CLIENT_ID/);
   });
 
   it("creates a user row when provisioning a new idp identity", async () => {
@@ -124,6 +139,44 @@ describe("keycloak auth", () => {
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { idpId: "kc-user-99" },
     });
+  });
+
+  it("provisions the user from a valid Bearer request (verify + insert-or-fetch)", async () => {
+    vi.mocked(jwtVerify).mockResolvedValueOnce({
+      payload: CLAIMS,
+      protectedHeader: {},
+    } as never);
+    vi.mocked(prisma.user.create).mockResolvedValueOnce({
+      id: "u1",
+      idpId: "kc-user-99",
+      email: "c@d.com",
+      orgId: null,
+      role: "member",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as never);
+
+    const user = await provisionKeycloakUser(
+      fakeRequest("Bearer a.b.c") as never
+    );
+    expect(user).toEqual({ idpId: "kc-user-99", email: "c@d.com" });
+    expect(prisma.user.create).toHaveBeenCalledWith({
+      data: { idpId: "kc-user-99", email: "c@d.com" },
+    });
+  });
+
+  it("returns null from provisionKeycloakUser when the Bearer token is invalid", async () => {
+    vi.mocked(jwtVerify).mockRejectedValueOnce(new Error("invalid signature"));
+    await expect(
+      provisionKeycloakUser(fakeRequest("Bearer bad.token") as never)
+    ).resolves.toBeNull();
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it("returns null from provisionKeycloakUser without an Authorization header", async () => {
+    await expect(
+      provisionKeycloakUser(fakeRequest(null) as never)
+    ).resolves.toBeNull();
   });
 
   it("returns the user from a Bearer Authorization header", async () => {

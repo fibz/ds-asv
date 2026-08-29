@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma-client";
 import { generateApiKey, hashApiKey } from "@/lib/auth/api-keys";
-import { getKeycloakUser } from "@/lib/auth/keycloak";
+import { provisionKeycloakUser } from "@/lib/auth/keycloak";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const keycloakUser = await getKeycloakUser(request);
+  const keycloakUser = await provisionKeycloakUser(request);
   if (!keycloakUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

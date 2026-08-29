@@ -33,7 +33,7 @@ describe("api-keys hashing", () => {
     expect(recomputed).toBe(stored);
   });
 
-  it("rejects a presented key that does not match the stored salt", async () => {
+  it("computes a different stored value for a different key under the same salt", async () => {
     const stored = await hashApiKey("sk_live_right-key");
     const { salt } = splitKeyHash(stored)!;
     const wrong = await hashApiKey("sk_live_wrong-key", salt);
