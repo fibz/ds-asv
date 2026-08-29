@@ -32,8 +32,11 @@ async function adminQuery(sql: string, params?: unknown[]): Promise<void> {
 
 describe("audit", () => {
   beforeAll(async () => {
-    // wipe any AuditEvent leftovers from a previous (crashed) run
-    await adminQuery(`DELETE FROM "AuditEvent"`);
+    // wipe any AuditEvent leftovers from a previous (crashed) run. SCOPED to
+    // this suite's org: every vitest file shares the DB and runs in parallel,
+    // so a global DELETE FROM "AuditEvent" would tear down rows that
+    // concurrently-running suites (e.g. tenant-isolation.test.ts) just seeded.
+    await adminQuery(`DELETE FROM "AuditEvent" WHERE "organizationId" = 'o1'`);
     // the FK target for ctx.organizationId must exist before any insert;
     // "updatedAt" is NOT NULL with no DB default (Prisma fills it client-side)
     await adminQuery(
