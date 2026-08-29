@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma-client";
 import { hashApiKey, generateApiKey, maskApiKey } from "@/lib/auth/api-keys";
 
 export async function POST(request: NextRequest) {

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma-client";
 import { hashApiKey } from "@/lib/auth/api-keys";
 
 export type Scope =
