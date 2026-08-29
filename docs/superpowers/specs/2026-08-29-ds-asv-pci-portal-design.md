@@ -46,7 +46,8 @@ Per the onboarding design doc's MVP boundary and the solo/3-month constraint, th
 - Billing / seats / plans
 - Wazuh SIEM integration
 - Threat detection / correlation engine
-- Report digital signing / attestation (unsigned SAR for MVP)
+- Cryptographic report signing by a third-party PKI (the human **QA attestation** gate and the
+  **dispute flow** ARE in the MVP — only the external crypto-signing is deferred)
 
 ### 1.3 ASV certification
 
@@ -143,6 +144,9 @@ asset/scope layer):
 - `Authorization` — signed customer authority (statement hash, scope-version hash)
 - `Scan` / `ScanTarget` — execution request + immutable execution snapshot
 - `Finding` — vulnerability record (fingerprint, severity, status, evidence refs)
+- `Report` — generated, Qualys-structured report (attestation page, summary, per-host detail)
+- `ReportAttestation` — QA attestation record (reviewer, status, signer, timestamp)
+- `Dispute` — customer dispute on a finding (justification, moderation status, QA resolution)
 - `AuditEvent` — append-only security/workflow history
 - `ApiKey` — existing, scoped machine keys
 - `Cve` — self-hosted CVE/NVD record (CVSS, affected CPE)
@@ -154,24 +158,57 @@ Every table writing user/tenant data carries `organization_id`; RLS enforced.
 ## 5. ASV scan flow (end-to-end)
 
 ```
-1. Merchant logs in (Clerk)                      [control plane]
+1. Merchant logs in (Clerk + MFA)                    [control plane]
 2. Adds an asset (IP / CIDR / FQDN)
-3. Verifies ownership (DNS TXT / HTTP challenge) [control plane]
-4. Approves scope version (attestation)          [control plane]
+3. Verifies ownership (DNS TXT / HTTP challenge)     [control plane]
+4. Schedules a scan (input IP/domain + date)         [control plane]
+5. Approves scope version (attestation)              [control plane]
           └─ issues signed, expiring scan-job manifest
-5. Scanner runs black-box scan (nmap + testssl)  [scanner service]
-6. Findings scored (CVSS + PCI rules) against CVE DB
-7. Evidence stored (MinIO/S3)
-8. Merchant sees findings + PCI-aligned report
+6. Scanner runs black-box scan (nmap + testssl)      [scanner service]
+7. Findings scored (CVSS + PCI rules) against CVE DB
+8. Evidence stored (MinIO/S3)
+9. Report generated (Qualys-style structure)         [control plane]
+10. QA attestation gate: reviewer attests report
+     └─ "Passed" → portal emails customer, congratulating passed report
+     └─ dispute → customer raises dispute + justification → QA moderates status
 ```
 
 - **Black-box only** in MVP (`auth_method: none`, `nmap -sC -A -Pn`-equivalent profile,
   180s tool timeout). Signed/authenticated scanning (Vault SSH, WinRM) is deferred.
+- **Two "pass" gates:** the **scan result** itself, and the **QA attestation gate** where a
+  reviewer attests the report is compliant before it is final.
+- **Dispute flow:** a customer can raise a dispute on a finding, provide justification in the
+  portal, and a QA reviewer updates the system and moderates the scan status.
+- **Congratulations email:** on a "Passed" attestation, the portal emails the customer.
 - **Scope-approval gate is the whole point.** No scan runs until a merchant has approved a
   scope version — this is what distinguishes it from a plain port scanner and provides
   defensible compliance evidence.
 - Targets are scope-boundary validated; CIDRs are boundaries only and are never passed as
   a single individual-IP profile.
+
+### 5.1 Report structure (matches the Qualys PCI Technical Report sample)
+
+Generated reports replicate the reference report's structure:
+
+1. **Attestation of Scan Compliance** — A.1 Customer info; A.2 ASV info + cert #; A.3 Scan
+   status (date completed, **90-day scan expiration**, compliance status, # in-scope
+   components, # failing vulns); A.4 Customer attestation; A.5 ASV attestation.
+2. **ASV Scan Report Summary** — Part 1 scan info; Part 2 **Component Compliance Summary**
+   (per-host PASSED/FAILED); Part 3a vulnerabilities per component (severity / CVSS /
+   compliance status / exceptions); Part 3b special notes; Part 4a-4c scope / in-scope /
+   out-of-scope.
+3. **Report Summary** — hosts, scan/report dates, **vulnerabilities total**, average security
+   risk, **by severity (1-5)** and **by PCI severity (High/Medium/Low)**.
+4. **Detailed Results** — per host, per finding: severity, **QID**, category, **CVE ID**,
+   vendor ref, last update, threat / impact / result.
+5. **Option Profile** — scan configuration (TCP full, UDP standard, auth disabled, host
+   discovery).
+6. **Report Legend** — PCI status explanation, **severity levels 1-5**, **CVSS PCI severity
+   bands** (Low 0-3.9 / Medium 4-6.9 / High 7-10), potential-vulnerability + info-gathered
+   levels.
+
+The existing `t3/portal/src/report-summary.js` (risk rating, severity counts, authorization
+recorded) maps to the Report Summary section and is reused for that aggregation.
 
 ---
 
@@ -227,6 +264,7 @@ Wiring:
 | compliance-engine api-key mgmt | ✅ | — | — |
 | compliance-engine mock dashboards | — | — | ❌ throw away |
 | onboarding design doc | ✅ | — | — |
+| t3/portal report-summary logic | ✅ (risk rating, severity counts) | — | — |
 
 **Code bugs fixed during consolidation:**
 - #3 — scoring engine: TLS/cipher hard-fail not reflected in final PASS/FAIL (produces wrong
@@ -250,6 +288,9 @@ ds-asv/
 │   ├── app/         # API, connectors, scoring, reports, tasks, models
 │   ├── nvd/         # self-hosted CVE/NVD mirror
 │   └── infra/       # terraform, docker, vault policies
+├── docs/reference/           # design inputs
+│   ├── ASV User Flow.drawio # product workflow (QA attestation + dispute)
+│   └── Confidential_Qashier_ASV_..._Report.pdf # sample Qualys PCI report
 ├── docs/superpowers/specs/   # design docs (this file)
 └── docker-compose.yml        # portal + scanner + postgres + redis + minio
 ```
@@ -272,6 +313,9 @@ Adopted from `Customer-Onboarding-Asset-Management-Design.md` §11, scoped to th
 4. **Phase 4 — Connect scan execution:** generate `scan_targets` from approved scope, sign
    manifest, dispatch workers, reconcile results. *Exit: every finding/report traces asset →
    scope → authorization → scan target.*
-5. **Phase 0 — Policy/threat model** precedes coding (auth text, retention, support-access,
+5. **Phase 5 — Reporting + QA workflow:** generate the Qualys-structured report, QA
+   attestation gate, dispute flow, congratulations email. *Exit: a report is not final until
+   QA-attested; a customer can raise and resolve a dispute.*
+6. **Phase 0 — Policy/threat model** precedes coding (auth text, retention, support-access,
    tenant-conflict, emergency-stop policies; threat-model tenant isolation, scope tampering,
    SSRF, abusive scanning, credential theft, report leakage, worker compromise).
