@@ -47,3 +47,6 @@ scanner/prisma/generated/
 
 # Git worktrees
 .worktrees/
+
+# SDD scratch workspace
+.superpowers/
