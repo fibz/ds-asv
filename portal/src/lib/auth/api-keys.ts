@@ -4,6 +4,16 @@ const KEY_PREFIX = "sk_live_";
 const SALT_BYTES = 16;
 
 /**
+ * ApiKey RLS policies + grants are deliberately deferred to Phase 2 (its first
+ * task). asv_app has NO grants on "ApiKey" (fail-closed by design), so any v1
+ * api-keys route that reached the table would 500 with permission-denied.
+ * Until Phase 2 revives the surface, every api-keys route short-circuits to
+ * this explicit, self-documenting 501 instead of an opaque 500.
+ */
+export const API_KEYS_NOT_IMPLEMENTED =
+  "Not Implemented — API key management requires Phase 2 (ApiKey RLS + grants)";
+
+/**
  * Generates a new API key in the form `sk_live_<48 random chars>`.
  */
 export function generateApiKey(): string {
