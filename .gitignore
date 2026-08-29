@@ -1,0 +1,33 @@
+# Node
+node_modules/
+.next/
+.next-new/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.coverage
+
+# Prisma generated client
+prisma/generated/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Build artifacts
+dist/
+build/
+*.tar.gz
+*.zip
+
+# OS
+.DS_Store
