@@ -27,6 +27,9 @@ const ORG_A = "iso_org_aaaa_0001";
 const ORG_B = "iso_org_bbbb_0002";
 const ORG_A_CHILD = "iso_org_cccc_0003";
 const ORG_UNRELATED = "iso_org_dddd_0004";
+// fresh id (NOT seeded) so the (f) cross-tenant org create fails ONLY because
+// of the WITH CHECK policy — never a duplicate-key collision
+const ORG_OTHER_FRESH = "iso_org_ffff_0006";
 const USER_B = "iso_user_bbbb_0002";
 const SEEDED_ORGS = [ORG_A, ORG_B, ORG_A_CHILD, ORG_UNRELATED];
 const SEEDED_USERS = [USER_B];
@@ -68,6 +71,37 @@ async function wipeSeeded(): Promise<void> {
   // deleting the orgs cascades to their contacts / audit events / memberships
   await adminQuery(`DELETE FROM "Organization" WHERE id = ANY($1::text[])`, [SEEDED_ORGS]);
   await adminQuery(`DELETE FROM "User" WHERE id = ANY($1::text[])`, [SEEDED_USERS]);
+}
+
+/**
+ * Asserts that `promise` is REJECTED by the RLS WITH CHECK policy.
+ *
+ * Prisma error-code nuance: with `@prisma/adapter-pg` (Prisma 7), P2039 is the
+ * GENERIC driver-adapter wrapper for ANY database error — it is not RLS-specific,
+ * so `code: "P2039"` alone would also match a failure for an unrelated DB reason
+ * (e.g. a future check constraint) and could mask a broken WITH CHECK. The
+ * precise evidence is the embedded PostgreSQL SQLSTATE: a WITH CHECK violation
+ * raises 42501 (insufficient_privilege). That SQLSTATE is surfaced twice,
+ * verified against the live DB for Contact, AuditEvent and Organization:
+ * formatted in `error.message` ("Code: `42501`") and raw at
+ * `error.meta.driverAdapterError.cause.originalCode`. Asserting on the SQLSTATE
+ * is what makes the rejection provably an RLS rejection.
+ */
+async function expectRlsRejection(promise: Promise<unknown>): Promise<void> {
+  const err = await promise.then(
+    () => {
+      throw new Error("expected an RLS rejection (SQLSTATE 42501), but the query succeeded");
+    },
+    (e: unknown) => e
+  );
+  const e = err as {
+    message?: string;
+    meta?: { driverAdapterError?: { cause?: { originalCode?: string } } };
+  };
+  // primary check: the raw SQLSTATE carried by the driver adapter
+  expect(e.meta?.driverAdapterError?.cause?.originalCode).toBe("42501");
+  // belt-and-braces: the formatted message also carries `Code: `42501``
+  expect(e.message).toContain("42501");
 }
 
 describe("cross-tenant isolation (Phase 1 exit criterion)", () => {
@@ -138,13 +172,15 @@ describe("cross-tenant isolation (Phase 1 exit criterion)", () => {
   });
 
   it("(c) a cross-tenant INSERT (B's organizationId while contexted as A) is rejected by WITH CHECK", async () => {
-    await expect(
+    // the rejection must be the RLS WITH CHECK violation (SQLSTATE 42501), not
+    // just ANY database error — see expectRlsRejection
+    await expectRlsRejection(
       withTenant(ORG_A, async (tx) =>
         tx.contact.create({
           data: { organizationId: ORG_B, type: "business", name: "sneaky", email: "s@x.com" },
         })
       )
-    ).rejects.toMatchObject({ code: "P2039" }); // Prisma code: new row violates row-level security policy
+    );
     // proof of absence via the ADMIN connection: the rejected row must not
     // exist anywhere in the table (an RLS-filtered count could hide it)
     const [row] = await adminQuery<{ n: number }>(
@@ -175,13 +211,19 @@ describe("cross-tenant isolation (Phase 1 exit criterion)", () => {
       expect(await tx.auditEvent.findMany({ where: { organizationId: ORG_B } })).toHaveLength(0);
     });
     // audit writes are gated by the same WITH CHECK policy
-    await expect(
+    await expectRlsRejection(
       withTenant(ORG_A, async (tx) =>
         tx.auditEvent.create({
           data: { organizationId: ORG_B, actorUserId: "u-a", action: "sneaky", resourceType: "X" },
         })
       )
-    ).rejects.toMatchObject({ code: "P2039" });
+    );
+    // proof of absence (ADMIN, RLS-bypassing): the sneaky audit row never landed
+    const [auditRow] = await adminQuery<{ n: number }>(
+      `SELECT count(*)::int AS n FROM "AuditEvent" WHERE "organizationId" = $1 AND action = $2`,
+      [ORG_B, "sneaky"]
+    );
+    expect(auditRow.n).toBe(0);
   });
 
   it("(f) org policy: tenant A sees its own org + direct children, never an unrelated org", async () => {
@@ -193,17 +235,25 @@ describe("cross-tenant isolation (Phase 1 exit criterion)", () => {
       expect(await tx.organization.findUnique({ where: { id: ORG_UNRELATED } })).toBeNull();
     });
     // an org that is neither the session tenant nor its direct child cannot be
-    // created while contexted as A (WITH CHECK on Organization)
-    await expect(
+    // created while contexted as A (WITH CHECK on Organization). ORG_OTHER_FRESH
+    // is a brand-new id (never seeded), so the only reason this can fail is the
+    // policy — never a duplicate-key collision.
+    await expectRlsRejection(
       withTenant(ORG_A, async (tx) =>
-        tx.organization.create({ data: { id: ORG_UNRELATED, name: "Unrelated" } })
+        tx.organization.create({ data: { id: ORG_OTHER_FRESH, name: "Unrelated" } })
       )
-    ).rejects.toMatchObject({ code: "P2039" });
+    );
     // ...and a child of B (parentOrgId = B) cannot be created by A either
-    await expect(
+    await expectRlsRejection(
       withTenant(ORG_A, async (tx) =>
         tx.organization.create({ data: { id: "iso_org_eeee_0005", name: "B-child", parentOrgId: ORG_B } })
       )
-    ).rejects.toMatchObject({ code: "P2039" });
+    );
+    // proof of absence (ADMIN, RLS-bypassing): neither rejected org row landed
+    const [orgRows] = await adminQuery<{ n: number }>(
+      `SELECT count(*)::int AS n FROM "Organization" WHERE id = ANY($1::text[])`,
+      [[ORG_OTHER_FRESH, "iso_org_eeee_0005"]]
+    );
+    expect(orgRows.n).toBe(0);
   });
 });
