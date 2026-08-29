@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma-client";
 import { hashApiKey, generateApiKey, maskApiKey } from "@/lib/auth/api-keys";
+import { getKeycloakUser } from "@/lib/auth/keycloak";
 
 export async function POST(request: NextRequest) {
-  const { userId } = await auth();
+  const keycloakUser = await getKeycloakUser(request);
 
-  if (!userId) {
+  if (!keycloakUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({ where: { clerkId: userId } });
+  const user = await prisma.user.findUnique({
+    where: { idpId: keycloakUser.idpId },
+  });
   if (!user || !user.orgId) {
     return NextResponse.json({ error: "Organization not found" }, { status: 404 });
   }
@@ -55,13 +57,15 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const { userId } = await auth();
+  const keycloakUser = await getKeycloakUser(request);
 
-  if (!userId) {
+  if (!keycloakUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({ where: { clerkId: userId } });
+  const user = await prisma.user.findUnique({
+    where: { idpId: keycloakUser.idpId },
+  });
   if (!user || !user.orgId) {
     return NextResponse.json({ error: "Organization not found" }, { status: 404 });
   }

@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma-client";
 import { generateApiKey, hashApiKey } from "@/lib/auth/api-keys";
+import { getKeycloakUser } from "@/lib/auth/keycloak";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth();
-  if (!userId) {
+  const keycloakUser = await getKeycloakUser(request);
+  if (!keycloakUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({ where: { clerkId: userId } });
+  const user = await prisma.user.findUnique({
+    where: { idpId: keycloakUser.idpId },
+  });
   if (!user || !user.orgId || user.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
