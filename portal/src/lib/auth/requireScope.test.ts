@@ -6,10 +6,11 @@ import { requireScope } from "@/lib/auth/requireScope";
 import { hashApiKey, splitKeyHash } from "@/lib/auth/api-keys";
 
 // requireScope (and its ApiKey rows) run through the module-level prisma
-// client. asv_app has NO grants on "ApiKey" until Tasks 6-7 land their RLS
-// policies (deferred by design), so this test points prisma at the ADMIN
-// connection — the permission surface is not what we are testing here; the
-// salted-lookup logic is. The DB itself is the real test DB on :5433.
+// client. RLS policies + grants on "ApiKey" landed in Task 1 (migration
+// 20260830000001_phase2_api_key_rls), but this test still points prisma at
+// the ADMIN connection to keep the permission surface out of scope — what is
+// under test here is the salted-lookup + tenant-scoped transaction logic. The
+// DB itself is the real test DB on :5433.
 vi.mock("@/lib/prisma-client", async () => {
   const { PrismaClient } = await import("@/lib/generated/prisma");
   const { PrismaPg } = await import("@prisma/adapter-pg");
@@ -162,6 +163,13 @@ describe("requireScope salted lookup", () => {
   it("still accepts valid keys when malformed keyHash rows are present", async () => {
     const result = await requireScope(reqWithKey(RAW_ADMIN), "admin");
     expect(result.ok).toBe(true);
+  });
+
+  it("updates lastUsedAt inside the tenant-scoped transaction", async () => {
+    const res = await requireScope(reqWithKey(RAW_ADMIN), "read:scans");
+    expect(res.ok).toBe(true);
+    const row = await prisma.apiKey.findUnique({ where: { id: "ak_reqscope_admin" } });
+    expect(row?.lastUsedAt).toBeTruthy();
   });
 });
 

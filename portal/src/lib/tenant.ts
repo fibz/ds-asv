@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma-client";
+import { provisionKeycloakUser } from "@/lib/auth/keycloak";
 import type { Prisma, Organization } from "@/lib/generated/prisma";
 
 export type Role =
@@ -75,6 +76,25 @@ export async function resolveTenantContext(userId: string): Promise<TenantContex
     isStaff: false,
     appMode: getAppMode(),
   };
+}
+
+/**
+ * Route-handler auth helper: verifies the Bearer token, provisions the user,
+ * then resolves tenant context from the active membership. Returns null when
+ * unauthenticated or the user has no active org — callers respond 401.
+ */
+export async function tenantContextFromRequest(request: {
+  headers: { get(name: string): string | null };
+}): Promise<TenantContext | null> {
+  const keycloakUser = await provisionKeycloakUser(request);
+  if (!keycloakUser) return null;
+  const user = await prisma.user.findUnique({ where: { idpId: keycloakUser.idpId } });
+  if (!user) return null;
+  try {
+    return await resolveTenantContext(user.id);
+  } catch {
+    return null;
+  }
 }
 
 /**

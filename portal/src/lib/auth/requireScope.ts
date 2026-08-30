@@ -22,10 +22,14 @@ export function isScope(value: unknown): value is Scope {
 }
 
 /**
- * Resolves the API key from the `X-API-Key` header and checks that it has the
- * required scope. Admin scope satisfies all requirements.
+ * Resolves the API key from the X-API-Key header and checks its scope.
  *
- * Returns either `{ key }` on success or a `NextResponse` error to return.
+ * RLS-aware: the candidate scan runs inside one transaction that first sets
+ * the bootstrap flag app.api_key_lookup='1' (SELECT-only policy
+ * api_key_lookup_bootstrap — the key lookup must work before a tenant context
+ * exists), and the lastUsedAt write runs in the SAME transaction after
+ * app.tenant_id is set from the matched key's orgId, so the isolation
+ * policy's WITH CHECK passes.
  */
 export async function requireScope(
   request: NextRequest,
@@ -36,62 +40,34 @@ export async function requireScope(
 > {
   const rawKey = request.headers.get("X-API-Key");
   if (!rawKey) {
-    return {
-      ok: false,
-      response: Response.json({ error: "Unauthorized" }, { status: 401 }),
-    };
+    return { ok: false, response: Response.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
-  // Stored hashes are salted (`salt$hash`), so the presented key cannot be
-  // precomputed into an indexed lookup value. Fetch the small set of active
-  // keys and verify the presented key against each row's salt.
-  const candidates = await prisma.apiKey.findMany({
-    where: { revokedAt: null },
-  });
-  let apiKey: (typeof candidates)[number] | null = null;
-  for (const candidate of candidates) {
-    const parts = splitKeyHash(candidate.keyHash);
-    if (!parts) continue; // legacy unsalted hash — no salt to verify against
-    const computed = await hashApiKey(rawKey, parts.salt);
-    if (computed === candidate.keyHash) {
-      apiKey = candidate;
-      break;
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`SELECT set_config('app.api_key_lookup', '1', true)`);
+    const candidates = await tx.apiKey.findMany({ where: { revokedAt: null } });
+    let apiKey: (typeof candidates)[number] | null = null;
+    for (const candidate of candidates) {
+      const parts = splitKeyHash(candidate.keyHash);
+      if (!parts) continue;
+      const computed = await hashApiKey(rawKey, parts.salt);
+      if (computed === candidate.keyHash) { apiKey = candidate; break; }
     }
-  }
-
-  if (!apiKey) {
-    return {
-      ok: false,
-      response: Response.json({ error: "Invalid API key" }, { status: 401 }),
-    };
-  }
-
-  if (apiKey.expiresAt && apiKey.expiresAt < new Date()) {
-    return {
-      ok: false,
-      response: Response.json({ error: "API key expired" }, { status: 401 }),
-    };
-  }
-
-  const scopes = apiKey.scopes as Scope[];
-  const hasAccess = scopes.includes(ADMIN_SCOPE) || scopes.includes(required);
-  if (!hasAccess) {
-    return {
-      ok: false,
-      response: Response.json(
-        { error: "Insufficient scope", required },
-        { status: 403 }
-      ),
-    };
-  }
-
-  await prisma.apiKey.update({
-    where: { id: apiKey.id },
-    data: { lastUsedAt: new Date() },
+    if (!apiKey) {
+      return { ok: false as const, response: Response.json({ error: "Invalid API key" }, { status: 401 }) };
+    }
+    if (apiKey.expiresAt && apiKey.expiresAt < new Date()) {
+      return { ok: false as const, response: Response.json({ error: "API key expired" }, { status: 401 }) };
+    }
+    const scopes = apiKey.scopes as Scope[];
+    const hasAccess = scopes.includes(ADMIN_SCOPE) || scopes.includes(required);
+    if (!hasAccess) {
+      return { ok: false as const, response: Response.json({ error: "Insufficient scope", required }, { status: 403 }) };
+    }
+    await tx.$executeRawUnsafe(`SELECT set_config('app.tenant_id', $1, true)`, apiKey.orgId);
+    await tx.apiKey.update({ where: { id: apiKey.id }, data: { lastUsedAt: new Date() } });
+    return { ok: true as const, key: { id: apiKey.id, orgId: apiKey.orgId, scopes } };
   });
 
-  return {
-    ok: true,
-    key: { id: apiKey.id, orgId: apiKey.orgId, scopes },
-  };
+  return result;
 }

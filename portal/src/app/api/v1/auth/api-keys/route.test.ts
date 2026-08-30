@@ -17,19 +17,29 @@ vi.mock("jose", () => ({
   createRemoteJWKSet: vi.fn(() => ({ mock: "jwks" })),
 }));
 
-// Mock prisma: ApiKey RLS + grants are deferred to Phase 2 (first task), so
-// asv_app has NO grants on "ApiKey" — the routes must 501 BEFORE touching the
-// table. The mock deliberately exposes NO apiKey surface: if a handler ever
-// tried to reach it, the test would blow up instead of seeing a 501, proving
-// the short-circuit.
-vi.mock("@/lib/prisma-client", () => ({
-  prisma: {
-    user: {
-      create: vi.fn(),
-      findUnique: vi.fn(),
+// Mock prisma: the tx client handed to $transaction is the same mock object,
+// so resolveTenantContext and the api-key service calls (create/list/update/
+// revoke/rotate + audit) all run against one in-memory surface. The mock must
+// expose user (create/findUnique — tenantContextFromRequest re-reads the user
+// after provisionKeycloakUser's create), organizationMembership (findFirst),
+// apiKey (create/findMany/findUnique/update), auditEvent (create), and
+// $executeRawUnsafe; $transaction(fn) just calls fn(txMock).
+vi.mock("@/lib/prisma-client", () => {
+  // the tx client handed to $transaction is the same mock object
+  const txMock = {
+    user: { create: vi.fn(), findUnique: vi.fn() },
+    organizationMembership: { findFirst: vi.fn() },
+    apiKey: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    auditEvent: { create: vi.fn() },
+    $executeRawUnsafe: vi.fn(),
+  };
+  return {
+    prisma: {
+      ...txMock,
+      $transaction: vi.fn((fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock)),
     },
-  },
-}));
+  };
+});
 
 const CLAIMS = { sub: "kc-user-99", email: "c@d.com" };
 
@@ -58,23 +68,34 @@ function bearerRequest(path: string, init: RequestInit = {}) {
   });
 }
 
-/** A request with a verified Bearer token: auth + provisioning succeed. */
+/**
+ * A request with a verified Bearer token: auth + provisioning succeed AND
+ * tenantContextFromRequest's post-provision user lookup (findUnique) is
+ * mocked. Each case sets its own organizationMembership.findFirst once-value
+ * BEFORE calling this helper (the role drives the requireRole gate); the
+ * once-queue is consumed in order, so the case's value wins.
+ */
 function authedRequest(path: string, init: RequestInit = {}) {
   vi.mocked(jwtVerify).mockResolvedValueOnce({
     payload: CLAIMS,
     protectedHeader: {},
   } as never);
   vi.mocked(prisma.user.create).mockResolvedValueOnce(userRow() as never);
+  vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(userRow() as never);
   return bearerRequest(path, init);
 }
 
-// The 501 stubs never touch the path id, so handlers take only the request.
-async function expectNotImplemented(response: Response): Promise<void> {
-  expect(response.status).toBe(501);
-  expect((await response.json()).error).toMatch(/Phase 2/);
-}
+const keyRow = (overrides: Partial<Record<string, unknown>> = {}) => ({
+  id: "ak_1",
+  name: "k",
+  keyHash: "salt$hash",
+  scopes: ["admin"],
+  orgId: "org_1",
+  createdAt: new Date(),
+  ...overrides,
+});
 
-describe("POST /api/v1/auth/api-keys (deferred surface)", () => {
+describe("POST /api/v1/auth/api-keys", () => {
   beforeEach(() => {
     vi.stubEnv("KEYCLOAK_ISSUER", "https://keycloak.example.test/realms/asv");
     vi.stubEnv("KEYCLOAK_CLIENT_ID", "asv-portal");
@@ -85,18 +106,28 @@ describe("POST /api/v1/auth/api-keys (deferred surface)", () => {
     vi.clearAllMocks();
   });
 
-  it("returns 501 for authenticated callers — ApiKey mgmt requires Phase 2", async () => {
+  it("creates a key and returns the raw key once (201)", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    vi.mocked(prisma.apiKey.create).mockResolvedValueOnce({ id: "ak_1", name: "test key", keyHash: "salt$hash", scopes: ["admin"], orgId: "org_1" } as never);
     const request = authedRequest("/api/v1/auth/api-keys", {
       method: "POST",
       body: JSON.stringify({ name: "test key", scopes: ["admin"] }),
     });
-    // auth + provisioning still happen (that surface is real)…
-    await expectNotImplemented(await POST(request));
-    expect(prisma.user.create).toHaveBeenCalledWith({
-      data: { idpId: "kc-user-99", email: "c@d.com" },
+    const response = await POST(request);
+    expect(response.status).toBe(201);
+    const data = await response.json();
+    expect(data.key).toMatch(/^sk_live_/);
+    expect(data.id).toBe("ak_1");
+  });
+
+  it("returns 400 for missing name or invalid scopes", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    const request = authedRequest("/api/v1/auth/api-keys", {
+      method: "POST",
+      body: JSON.stringify({ name: "", scopes: ["nope:scope"] }),
     });
-    // …but the handler never reaches the (grant-less) ApiKey table — the
-    // mock exposes no apiKey surface, so reaching it would throw, not 501.
+    const response = await POST(request);
+    expect(response.status).toBe(400);
   });
 
   it("returns 401 without a Bearer token", async () => {
@@ -107,11 +138,20 @@ describe("POST /api/v1/auth/api-keys (deferred surface)", () => {
     });
     const response = await POST(request);
     expect(response.status).toBe(401);
-    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for a non-manager role", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "report_viewer", status: "active" } as never);
+    const request = authedRequest("/api/v1/auth/api-keys", {
+      method: "POST",
+      body: JSON.stringify({ name: "x", scopes: ["admin"] }),
+    });
+    const response = await POST(request);
+    expect(response.status).toBe(403);
   });
 });
 
-describe("GET /api/v1/auth/api-keys (deferred surface)", () => {
+describe("GET /api/v1/auth/api-keys", () => {
   beforeEach(() => {
     vi.stubEnv("KEYCLOAK_ISSUER", "https://keycloak.example.test/realms/asv");
     vi.stubEnv("KEYCLOAK_CLIENT_ID", "asv-portal");
@@ -122,10 +162,14 @@ describe("GET /api/v1/auth/api-keys (deferred surface)", () => {
     vi.clearAllMocks();
   });
 
-  it("returns 501 for authenticated callers — ApiKey mgmt requires Phase 2", async () => {
-    await expectNotImplemented(
-      await GET(authedRequest("/api/v1/auth/api-keys"))
-    );
+  it("lists keys for the tenant (200)", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    vi.mocked(prisma.apiKey.findMany).mockResolvedValueOnce([{ id: "ak_1", name: "k", keyHash: "salt$hash", scopes: ["admin"], orgId: "org_1", lastUsedAt: null, expiresAt: null, revokedAt: null, createdAt: new Date() }] as never);
+    const request = authedRequest("/api/v1/auth/api-keys");
+    const response = await GET(request);
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.keys[0].maskedKey).toMatch(/^sk_live_/);
   });
 
   it("returns 401 without a Bearer token", async () => {
@@ -133,9 +177,16 @@ describe("GET /api/v1/auth/api-keys (deferred surface)", () => {
     const response = await GET(request);
     expect(response.status).toBe(401);
   });
+
+  it("returns 403 for a non-manager role", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "report_viewer", status: "active" } as never);
+    const request = authedRequest("/api/v1/auth/api-keys");
+    const response = await GET(request);
+    expect(response.status).toBe(403);
+  });
 });
 
-describe("/api/v1/auth/api-keys/[id] (GET/PATCH/DELETE, deferred surface)", () => {
+describe("/api/v1/auth/api-keys/[id] (GET/PATCH/DELETE)", () => {
   beforeEach(() => {
     vi.stubEnv("KEYCLOAK_ISSUER", "https://keycloak.example.test/realms/asv");
     vi.stubEnv("KEYCLOAK_CLIENT_ID", "asv-portal");
@@ -146,40 +197,90 @@ describe("/api/v1/auth/api-keys/[id] (GET/PATCH/DELETE, deferred surface)", () =
     vi.clearAllMocks();
   });
 
-  it("returns 501 for GET", async () => {
-    await expectNotImplemented(
-      await getId(authedRequest("/api/v1/auth/api-keys/ak_1"))
+  it("returns the masked single key for GET (200)", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    vi.mocked(prisma.apiKey.findUnique).mockResolvedValueOnce(keyRow() as never);
+    const response = await getId(
+      authedRequest("/api/v1/auth/api-keys/ak_1"),
+      { params: Promise.resolve({ id: "ak_1" }) }
     );
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.id).toBe("ak_1");
   });
 
-  it("returns 501 for PATCH", async () => {
-    await expectNotImplemented(
-      await patchId(
-        authedRequest("/api/v1/auth/api-keys/ak_1", {
-          method: "PATCH",
-          body: JSON.stringify({ name: "renamed" }),
-        })
-      )
+  it("returns 404 for GET when the key does not exist", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    vi.mocked(prisma.apiKey.findUnique).mockResolvedValueOnce(null as never);
+    const response = await getId(
+      authedRequest("/api/v1/auth/api-keys/nope"),
+      { params: Promise.resolve({ id: "nope" }) }
     );
+    expect(response.status).toBe(404);
   });
 
-  it("returns 501 for DELETE", async () => {
-    await expectNotImplemented(
-      await deleteId(
-        authedRequest("/api/v1/auth/api-keys/ak_1", { method: "DELETE" })
-      )
+  it("renames a key via PATCH (200)", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    vi.mocked(prisma.apiKey.findUnique).mockResolvedValueOnce(keyRow({ name: "old" }) as never);
+    vi.mocked(prisma.apiKey.update).mockResolvedValueOnce(keyRow({ name: "renamed" }) as never);
+    const response = await patchId(
+      authedRequest("/api/v1/auth/api-keys/ak_1", {
+        method: "PATCH",
+        body: JSON.stringify({ name: "renamed" }),
+      }),
+      { params: Promise.resolve({ id: "ak_1" }) }
     );
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.name).toBe("renamed");
+  });
+
+  it("returns 404 for PATCH when the key does not exist", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    vi.mocked(prisma.apiKey.findUnique).mockResolvedValueOnce(null as never);
+    const response = await patchId(
+      authedRequest("/api/v1/auth/api-keys/nope", {
+        method: "PATCH",
+        body: JSON.stringify({ name: "x" }),
+      }),
+      { params: Promise.resolve({ id: "nope" }) }
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("revokes a key via DELETE (200)", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    vi.mocked(prisma.apiKey.findUnique).mockResolvedValueOnce(keyRow() as never);
+    vi.mocked(prisma.apiKey.update).mockResolvedValueOnce(keyRow({ revokedAt: new Date() }) as never);
+    const response = await deleteId(
+      authedRequest("/api/v1/auth/api-keys/ak_1", { method: "DELETE" }),
+      { params: Promise.resolve({ id: "ak_1" }) }
+    );
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.revoked).toBe(true);
+  });
+
+  it("returns 404 for DELETE when the key does not exist", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    vi.mocked(prisma.apiKey.findUnique).mockResolvedValueOnce(null as never);
+    const response = await deleteId(
+      authedRequest("/api/v1/auth/api-keys/nope", { method: "DELETE" }),
+      { params: Promise.resolve({ id: "nope" }) }
+    );
+    expect(response.status).toBe(404);
   });
 
   it("returns 401 without a Bearer token", async () => {
     const response = await getId(
-      new NextRequest("http://localhost/api/v1/auth/api-keys/ak_1")
+      new NextRequest("http://localhost/api/v1/auth/api-keys/ak_1"),
+      { params: Promise.resolve({ id: "ak_1" }) }
     );
     expect(response.status).toBe(401);
   });
 });
 
-describe("POST /api/v1/auth/api-keys/[id]/rotate (deferred surface)", () => {
+describe("POST /api/v1/auth/api-keys/[id]/rotate", () => {
   beforeEach(() => {
     vi.stubEnv("KEYCLOAK_ISSUER", "https://keycloak.example.test/realms/asv");
     vi.stubEnv("KEYCLOAK_CLIENT_ID", "asv-portal");
@@ -190,14 +291,38 @@ describe("POST /api/v1/auth/api-keys/[id]/rotate (deferred surface)", () => {
     vi.clearAllMocks();
   });
 
-  it("returns 501 for authenticated callers", async () => {
-    await expectNotImplemented(
-      await rotatePost(
-        authedRequest("/api/v1/auth/api-keys/ak_1/rotate", {
-          method: "POST",
-        })
-      )
+  it("rotates a key and returns the new raw key (200)", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    vi.mocked(prisma.apiKey.findUnique).mockResolvedValueOnce(keyRow({ name: "rotate-me" }) as never);
+    vi.mocked(prisma.apiKey.update).mockResolvedValueOnce(keyRow({ revokedAt: new Date() }) as never);
+    vi.mocked(prisma.apiKey.create).mockResolvedValueOnce(keyRow({ id: "ak_2", name: "rotate-me" }) as never);
+    const response = await rotatePost(
+      authedRequest("/api/v1/auth/api-keys/ak_1/rotate", { method: "POST" }),
+      { params: Promise.resolve({ id: "ak_1" }) }
     );
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.key).toMatch(/^sk_live_/);
+    expect(data.id).toBe("ak_2");
+  });
+
+  it("returns 404 when the key does not exist", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    vi.mocked(prisma.apiKey.findUnique).mockResolvedValueOnce(null as never);
+    const response = await rotatePost(
+      authedRequest("/api/v1/auth/api-keys/nope/rotate", { method: "POST" }),
+      { params: Promise.resolve({ id: "nope" }) }
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("returns 403 for a non-manager role", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "report_viewer", status: "active" } as never);
+    const response = await rotatePost(
+      authedRequest("/api/v1/auth/api-keys/ak_1/rotate", { method: "POST" }),
+      { params: Promise.resolve({ id: "ak_1" }) }
+    );
+    expect(response.status).toBe(403);
   });
 
   it("returns 401 without a Bearer token", async () => {
@@ -205,7 +330,9 @@ describe("POST /api/v1/auth/api-keys/[id]/rotate (deferred surface)", () => {
       "http://localhost/api/v1/auth/api-keys/ak_1/rotate",
       { method: "POST" }
     );
-    const response = await rotatePost(request);
+    const response = await rotatePost(request, {
+      params: Promise.resolve({ id: "ak_1" }),
+    });
     expect(response.status).toBe(401);
   });
 });

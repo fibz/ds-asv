@@ -1,34 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
-import { API_KEYS_NOT_IMPLEMENTED } from "@/lib/auth/api-keys";
-import { provisionKeycloakUser } from "@/lib/auth/keycloak";
-
-/**
- * ApiKey RLS policies + grants are deliberately deferred to Phase 2 (first
- * task). asv_app has NO grants on "ApiKey" (fail-closed by design), so the
- * old create/list flow here would 500 with permission-denied the moment it
- * touched the table. Until Phase 2 revives the surface, authentication is
- * still enforced (401), then the route answers an explicit, self-documenting
- * 501 instead of an opaque 500.
- */
+import { tenantContextFromRequest } from "@/lib/tenant";
+import { requireRole } from "@/lib/auth/rbac";
+import { createApiKey, listApiKeys } from "@/lib/auth/api-keys";
+import { isScope } from "@/lib/auth/requireScope";
 
 export async function POST(request: NextRequest) {
-  const keycloakUser = await provisionKeycloakUser(request);
-  if (!keycloakUser) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const ctx = await tenantContextFromRequest(request);
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    requireRole(ctx, "organization_owner", "security_admin");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  const body = await request.json().catch(() => null);
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const scopes = Array.isArray(body?.scopes) ? body.scopes.filter(isScope) : [];
+  if (!name || scopes.length === 0) {
+    return NextResponse.json({ error: "name and at least one valid scope are required" }, { status: 400 });
+  }
+  const expiresAt = body?.expiresAt ? new Date(body.expiresAt) : null;
+  if (expiresAt && Number.isNaN(expiresAt.getTime())) {
+    return NextResponse.json({ error: "invalid expiresAt" }, { status: 400 });
+  }
+  const created = await createApiKey(ctx, { name, scopes, expiresAt });
   return NextResponse.json(
-    { error: API_KEYS_NOT_IMPLEMENTED },
-    { status: 501 }
+    { id: created.id, name: created.name, key: created.key, scopes: created.scopes, expiresAt: created.expiresAt?.toISOString() ?? null },
+    { status: 201 }
   );
 }
 
 export async function GET(request: NextRequest) {
-  const keycloakUser = await provisionKeycloakUser(request);
-  if (!keycloakUser) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const ctx = await tenantContextFromRequest(request);
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    requireRole(ctx, "organization_owner", "security_admin");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  return NextResponse.json(
-    { error: API_KEYS_NOT_IMPLEMENTED },
-    { status: 501 }
-  );
+  const keys = await listApiKeys(ctx);
+  return NextResponse.json({
+    keys: keys.map((k) => ({
+      id: k.id, name: k.name, maskedKey: k.maskedKey, scopes: k.scopes,
+      lastUsedAt: k.lastUsedAt?.toISOString() ?? null,
+      expiresAt: k.expiresAt?.toISOString() ?? null,
+      revokedAt: k.revokedAt?.toISOString() ?? null,
+      createdAt: k.createdAt.toISOString(),
+    })),
+  });
 }

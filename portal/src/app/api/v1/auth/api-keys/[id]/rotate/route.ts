@@ -1,22 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { API_KEYS_NOT_IMPLEMENTED } from "@/lib/auth/api-keys";
-import { provisionKeycloakUser } from "@/lib/auth/keycloak";
+import { tenantContextFromRequest } from "@/lib/tenant";
+import { requireRole } from "@/lib/auth/rbac";
+import { rotateApiKey } from "@/lib/auth/api-keys";
 
-/**
- * ApiKey RLS policies + grants are deliberately deferred to Phase 2 (first
- * task). asv_app has NO grants on "ApiKey" (fail-closed by design), so the
- * old rotation flow here would 500 with permission-denied the moment it
- * touched the table. Until Phase 2 revives the surface, authentication is
- * still enforced (401), then the route answers an explicit, self-documenting
- * 501 instead of an opaque 500.
- */
-export async function POST(request: NextRequest) {
-  const keycloakUser = await provisionKeycloakUser(request);
-  if (!keycloakUser) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = await tenantContextFromRequest(request);
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    requireRole(ctx, "organization_owner", "security_admin");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  return NextResponse.json(
-    { error: API_KEYS_NOT_IMPLEMENTED },
-    { status: 501 }
-  );
+  const { id } = await params;
+  try {
+    const rotated = await rotateApiKey(ctx, id);
+    return NextResponse.json({ id: rotated.id, name: rotated.name, key: rotated.key, scopes: rotated.scopes, expiresAt: rotated.expiresAt?.toISOString() ?? null });
+  } catch {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 }

@@ -26,4 +26,12 @@ describe("rbac", () => {
     const viewer: TenantContext = { ...base, role: "report_viewer" };
     expect(can(viewer, "member.invite", {})).toBe(false); // viewer may not
   });
+  it("api-key.manage requires owner or security_admin in prod", () => {
+    const owner = { ...base, role: "organization_owner" as const };
+    const sec = { ...base, role: "security_admin" as const };
+    const viewer = { ...base, role: "report_viewer" as const };
+    expect(can(owner, "api-key.manage")).toBe(true);
+    expect(can(sec, "api-key.manage")).toBe(true);
+    expect(can(viewer, "api-key.manage")).toBe(false);
+  });
 });
