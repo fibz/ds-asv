@@ -2736,9 +2736,13 @@ describe("Phase 2 exit criteria", () => {
   });
 
   it("retiring referenced assets preserves history (row + audit + verification)", async () => {
-    const a = await withTenant(ORG, async (tx) => tx.asset.create({
-      data: { organizationId: ORG, type: "fqdn", canonicalIdentifier: "retire.example.com" },
-    }));
+    // NOTE (fixed during Task 10): the original brief created the asset via
+    // raw tx.asset.create and queried audits by resourceId=a.id — unreachable
+    // against the plan's own merged implementation: no DB audit trigger exists
+    // (raw creates emit no audit; only createAsset records asset.create), and
+    // Task 8 audits verification events against the AssetVerification resource
+    // (resourceId = verification.id). Corrected mechanism, assertions unchanged.
+    const a = await createAsset(ctx, { type: "fqdn", identifier: "retire.example.com" });
     const challenge = await createVerificationChallenge(ctx, a.id, "dns_txt");
     await verifyAssetToken(ctx, a.id, challenge.token);
     await retireAsset(ctx, a.id);
@@ -2747,11 +2751,16 @@ describe("Phase 2 exit criteria", () => {
     expect(after?.lifecycleState).toBe("retired");
     expect(after?.id).toBe(a.id); // row preserved
 
-    const audits = await withTenant(ORG, (tx) => tx.auditEvent.findMany({ where: { resourceId: a.id }, orderBy: { createdAt: "asc" } }));
-    expect(audits.map((e) => e.action)).toEqual(["asset.create", "asset.verification-challenge", "asset.verify", "asset.retire"]);
-
     const verifications = await withTenant(ORG, (tx) => tx.assetVerification.findMany({ where: { assetId: a.id } }));
     expect(verifications.length).toBeGreaterThanOrEqual(1);
+
+    // Full audit trail: asset-scoped events (create/retire) plus the
+    // verification-scoped events (challenge/verify).
+    const audits = await withTenant(ORG, (tx) => tx.auditEvent.findMany({
+      where: { organizationId: ORG, OR: [{ resourceId: a.id }, { resourceId: { in: verifications.map((v) => v.id) } }] },
+      orderBy: { createdAt: "asc" },
+    }));
+    expect(audits.map((e) => e.action)).toEqual(["asset.create", "asset.verification-challenge", "asset.verify", "asset.retire"]);
   });
 
   it("cross-tenant isolation holds for assets (RLS)", async () => {
