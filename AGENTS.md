@@ -40,5 +40,4 @@
 
 - Cookie-session auth + sign-in UI replacement (Keycloak hosted login) — dashboard layout is header-auth only.
 - Hardcoded dev DB passwords → env/Vault bootstrap before any non-dev run.
-- Remaining Clerk UI imports (api/scanners route, dashboard pages).
-- Pre-existing tsc errors (next.config.ts duplicate output; stale clerkId in api-keys page).
+- Pre-existing tsc errors (next.config.ts duplicate output; normalize.ts BigInt target) — the stale clerkId error was fixed by the Clerk strip.
