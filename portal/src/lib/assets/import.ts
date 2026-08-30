@@ -104,6 +104,25 @@ export async function previewImport(ctx: TenantContext, rows: AssetImportRow[]) 
  * retrievable via getImportResult (downloadable error report). */
 export async function applyImport(ctx: TenantContext, rows: AssetImportRow[], idempotencyKey: string) {
   if (!idempotencyKey) throw new Error("Idempotency-Key header is required for imports");
+
+  // Idempotency short-circuit FIRST: a replay of an existing key returns the
+  // stored AssetImport result immediately — no asset creation, no audit. This
+  // must run before the creation loop so replays never re-apply (e.g. after an
+  // asset was retired between replays) and never race to re-create assets.
+  const existingRecord = await prisma.$transaction(async (tx) => {
+    await setRlsContext(ctx.organizationId, tx);
+    return tx.assetImport.findUnique({
+      where: { organizationId_idempotencyKey: { organizationId: ctx.organizationId, idempotencyKey } },
+    });
+  });
+  if (existingRecord) {
+    return {
+      importId: existingRecord.id,
+      summary: existingRecord.summary as { total: number; created: number; duplicates: number; invalid: number },
+      invalidRows: existingRecord.invalidRows as unknown as { row: AssetImportRow; errors: string[] }[],
+    };
+  }
+
   const created: string[] = [];
   const duplicates: string[] = [];
   const invalidRows: { row: AssetImportRow; errors: string[] }[] = [];
@@ -134,7 +153,7 @@ export async function applyImport(ctx: TenantContext, rows: AssetImportRow[], id
     const existing = await tx.assetImport.findUnique({
       where: { organizationId_idempotencyKey: { organizationId: ctx.organizationId, idempotencyKey } },
     });
-    if (existing) return existing; // idempotent replay
+    if (existing) return existing; // lost a concurrent same-key apply; return its record
     const createdRecord = await tx.assetImport.create({
       data: {
         organizationId: ctx.organizationId,

@@ -104,4 +104,32 @@ describe("CSV import (idempotent, invalid rows downloadable)", () => {
     expect((stored?.summary as { created: number } | undefined)?.created).toBe(2);
     expect(stored?.invalidRows).toHaveLength(1);
   });
+
+  it("short-circuits idempotent replay without re-applying assets", async () => {
+    // apply, then retire the created asset: a re-apply would re-create it
+    // (dedupe + partial unique index both exclude 'retired'), so an unchanged
+    // asset count after replay proves the short-circuit fired (no re-apply).
+    const rows = parseCsv(`type,identifier,display_name\nipv4,10.0.0.3,sc-test\n`);
+    const first = await applyImport(ctx, rows, "imp-short-circuit");
+    expect(first.summary.created).toBe(1);
+    await withTenant(ORG, async (tx) => {
+      await tx.asset.updateMany({
+        where: { organizationId: ORG, type: "ipv4", canonicalIdentifier: "10.0.0.3" },
+        data: { lifecycleState: "retired" },
+      });
+    });
+    const before = await withTenant(ORG, (tx) => tx.asset.count());
+    const replay = await applyImport(ctx, rows, "imp-short-circuit");
+    expect(replay.importId).toBe(first.importId);
+    const after = await withTenant(ORG, (tx) => tx.asset.count());
+    expect(after).toBe(before); // replay did not re-apply the retired asset
+  });
+
+  it("counts within-file duplicate rows once in created and once in duplicates", async () => {
+    const rows = parseCsv(`type,identifier\nipv4,10.0.0.4\nipv4,10.0.0.4\n`);
+    const res = await applyImport(ctx, rows, "imp-file-dup");
+    expect(res.summary.total).toBe(2);
+    expect(res.summary.created).toBe(1);
+    expect(res.summary.duplicates).toBe(1);
+  });
 });
