@@ -3,6 +3,7 @@ import { Client } from "pg";
 import { prisma } from "@/lib/prisma-client";
 import { setRlsContext } from "@/lib/tenant";
 import { createVerificationChallenge, verifyAssetToken } from "@/lib/assets/verification";
+import { retireAsset } from "@/lib/assets/service";
 import type { TenantContext } from "@/lib/tenant";
 import type { Prisma } from "@/lib/generated/prisma";
 
@@ -81,5 +82,39 @@ describe("asset verification", () => {
       return tx.assetVerification.findUnique({ where: { id: challenge.verificationId } });
     });
     expect(expired?.status).toBe("expired");
+    // ...and the transition is audited (asset.verification-expired) in the same tx
+    const adminAudit = new Client({ connectionString: process.env.ADMIN_DATABASE_URL! });
+    await adminAudit.connect();
+    const audit = await adminAudit.query(
+      `SELECT "action" FROM "AuditEvent" WHERE "resourceType" = 'AssetVerification' AND "resourceId" = $1`,
+      [challenge.verificationId]
+    );
+    await adminAudit.end();
+    expect(audit.rows.map((r: { action: string }) => r.action)).toContain("asset.verification-expired");
+  });
+
+  it("cannot verify a retired asset — a pre-retirement challenge stays pending", async () => {
+    const a = await prisma.$transaction(async (tx) => {
+      await setRlsContext(ORG, tx);
+      return tx.asset.create({ data: { organizationId: ORG, type: "fqdn", canonicalIdentifier: "retire-guard.example.com" } });
+    });
+    // challenge issued while the asset is still active (24h TTL)
+    const challenge = await createVerificationChallenge(ctx, a.id, "dns_txt");
+    await retireAsset(ctx, a.id);
+
+    await expect(verifyAssetToken(ctx, a.id, challenge.token)).rejects.toThrow(/retired/i);
+
+    // retire invariant holds: the asset must NOT flip back to active, and the
+    // verification must NOT be marked verified — no state mutation on reject
+    const asset = await prisma.$transaction(async (tx) => {
+      await setRlsContext(ORG, tx);
+      return tx.asset.findUnique({ where: { id: a.id } });
+    });
+    expect(asset?.lifecycleState).toBe("retired");
+    const verification = await prisma.$transaction(async (tx) => {
+      await setRlsContext(ORG, tx);
+      return tx.assetVerification.findUnique({ where: { id: challenge.verificationId } });
+    });
+    expect(verification?.status).toBe("pending");
   });
 });

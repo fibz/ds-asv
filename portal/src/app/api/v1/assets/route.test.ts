@@ -320,6 +320,22 @@ describe("POST /api/v1/assets/[id]/retire", () => {
     expect(response.status).toBe(404);
   });
 
+  it("returns 500 and logs when retire hits a server error (not masked as 404)", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce(membershipRow() as never);
+    vi.mocked(prisma.asset.findFirst).mockRejectedValueOnce(new Error("db connection lost") as never);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await retirePost(
+        authedRequest("/api/v1/assets/as_1/retire", { method: "POST" }),
+        { params: Promise.resolve({ id: "as_1" }) }
+      );
+      expect(response.status).toBe(500);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("returns 403 for report_viewer (cannot manage assets)", async () => {
     vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "report_viewer", status: "active" } as never);
     const response = await retirePost(
@@ -391,6 +407,44 @@ describe("POST /api/v1/assets/imports", () => {
     });
     const response = await importsPost(request);
     expect(response.status).toBe(400);
+  });
+
+  it("returns 400 with the parse error for a client CSV problem (unknown column)", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce(membershipRow() as never);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const request = authedRequest("/api/v1/assets/imports", {
+        method: "POST",
+        body: JSON.stringify({ csv: "type,identifier,typo\nipv4,10.0.0.1,1", dryRun: true }),
+      });
+      const response = await importsPost(request);
+      expect(response.status).toBe(400);
+      const data = await response.json();
+      expect(data.error).toContain("Unknown column");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("returns 500 and logs when the import pipeline hits a server error (not masked as 400)", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce(membershipRow() as never);
+    vi.mocked(prisma.asset.findFirst).mockResolvedValueOnce(null as never);
+    vi.mocked(prisma.asset.create).mockResolvedValueOnce(assetRow() as never);
+    vi.mocked(prisma.assetImport.findUnique).mockResolvedValue(null as never);
+    vi.mocked(prisma.assetImport.create).mockRejectedValueOnce(new Error("db connection lost") as never);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const request = authedRequest("/api/v1/assets/imports", {
+        method: "POST",
+        headers: { "Idempotency-Key": "idem-500" },
+        body: JSON.stringify({ csv: "type,identifier\nipv4,10.0.0.1" }),
+      });
+      const response = await importsPost(request);
+      expect(response.status).toBe(500);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("returns 403 for report_viewer (cannot manage assets)", async () => {

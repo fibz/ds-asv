@@ -99,6 +99,7 @@ describe("POST /api/v1/auth/api-keys", () => {
   beforeEach(() => {
     vi.stubEnv("KEYCLOAK_ISSUER", "https://keycloak.example.test/realms/asv");
     vi.stubEnv("KEYCLOAK_CLIENT_ID", "asv-portal");
+    vi.stubEnv("APP_MODE", "prod");
   });
 
   afterEach(() => {
@@ -155,6 +156,7 @@ describe("GET /api/v1/auth/api-keys", () => {
   beforeEach(() => {
     vi.stubEnv("KEYCLOAK_ISSUER", "https://keycloak.example.test/realms/asv");
     vi.stubEnv("KEYCLOAK_CLIENT_ID", "asv-portal");
+    vi.stubEnv("APP_MODE", "prod");
   });
 
   afterEach(() => {
@@ -190,6 +192,7 @@ describe("/api/v1/auth/api-keys/[id] (GET/PATCH/DELETE)", () => {
   beforeEach(() => {
     vi.stubEnv("KEYCLOAK_ISSUER", "https://keycloak.example.test/realms/asv");
     vi.stubEnv("KEYCLOAK_CLIENT_ID", "asv-portal");
+    vi.stubEnv("APP_MODE", "prod");
   });
 
   afterEach(() => {
@@ -257,6 +260,25 @@ describe("/api/v1/auth/api-keys/[id] (GET/PATCH/DELETE)", () => {
     expect(response.status).toBe(404);
   });
 
+  it("returns 500 and logs when PATCH hits a server error (not masked as 404)", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    vi.mocked(prisma.apiKey.findUnique).mockRejectedValueOnce(new Error("db connection lost") as never);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await patchId(
+        authedRequest("/api/v1/auth/api-keys/ak_1", {
+          method: "PATCH",
+          body: JSON.stringify({ name: "renamed" }),
+        }),
+        { params: Promise.resolve({ id: "ak_1" }) }
+      );
+      expect(response.status).toBe(500);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("revokes a key via DELETE (200)", async () => {
     vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
     vi.mocked(prisma.apiKey.findUnique).mockResolvedValueOnce(keyRow() as never);
@@ -280,6 +302,22 @@ describe("/api/v1/auth/api-keys/[id] (GET/PATCH/DELETE)", () => {
     expect(response.status).toBe(404);
   });
 
+  it("returns 500 and logs when DELETE hits a server error (not masked as 404)", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    vi.mocked(prisma.apiKey.findUnique).mockRejectedValueOnce(new Error("db connection lost") as never);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await deleteId(
+        authedRequest("/api/v1/auth/api-keys/ak_1", { method: "DELETE" }),
+        { params: Promise.resolve({ id: "ak_1" }) }
+      );
+      expect(response.status).toBe(500);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("returns 401 without a Bearer token", async () => {
     const response = await getId(
       new NextRequest("http://localhost/api/v1/auth/api-keys/ak_1"),
@@ -293,6 +331,7 @@ describe("POST /api/v1/auth/api-keys/[id]/rotate", () => {
   beforeEach(() => {
     vi.stubEnv("KEYCLOAK_ISSUER", "https://keycloak.example.test/realms/asv");
     vi.stubEnv("KEYCLOAK_CLIENT_ID", "asv-portal");
+    vi.stubEnv("APP_MODE", "prod");
   });
 
   afterEach(() => {
@@ -323,6 +362,22 @@ describe("POST /api/v1/auth/api-keys/[id]/rotate", () => {
       { params: Promise.resolve({ id: "nope" }) }
     );
     expect(response.status).toBe(404);
+  });
+
+  it("returns 500 and logs when rotation hits a server error (not masked as 404)", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
+    vi.mocked(prisma.apiKey.findUnique).mockRejectedValueOnce(new Error("db connection lost") as never);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await rotatePost(
+        authedRequest("/api/v1/auth/api-keys/ak_1/rotate", { method: "POST" }),
+        { params: Promise.resolve({ id: "ak_1" }) }
+      );
+      expect(response.status).toBe(500);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("returns 403 for a non-manager role", async () => {

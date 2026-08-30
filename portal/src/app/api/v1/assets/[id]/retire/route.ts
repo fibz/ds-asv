@@ -12,6 +12,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const retired = await retireAsset(ctx, id);
     return NextResponse.json({ id: retired.id, lifecycleState: retired.lifecycleState });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 404 });
+    console.error("[/api/v1/assets/[id]/retire]", e);
+    // only the genuine not-found case is a client 404 — DB failures and other
+    // unexpected errors must surface (logged) as 500, not be masked as 404
+    if (e instanceof Error && e.message === "Asset not found") {
+      return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+    }
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

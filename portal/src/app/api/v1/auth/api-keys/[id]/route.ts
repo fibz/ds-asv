@@ -1,18 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma-client";
 import { tenantContextFromRequest, setRlsContext } from "@/lib/tenant";
-import { requireRole } from "@/lib/auth/rbac";
+import { can } from "@/lib/auth/rbac";
 import { updateApiKey, revokeApiKey } from "@/lib/auth/api-keys";
 import { isScope } from "@/lib/auth/requireScope";
+
+const NOT_FOUND = "API key not found";
+
+/** True only for the service's genuine not-found error — anything else is a
+ * server failure that must be logged, never masked as a client 404. */
+function isKeyNotFound(e: unknown): boolean {
+  return e instanceof Error && e.message === NOT_FOUND;
+}
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await tenantContextFromRequest(request);
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  try {
-    requireRole(ctx, "organization_owner", "security_admin");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  if (!can(ctx, "api-key.manage")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
   const keys = await listKeysFor(ctx, id);
   if (!keys) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -32,11 +36,7 @@ async function listKeysFor(ctx: NonNullable<Awaited<ReturnType<typeof tenantCont
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await tenantContextFromRequest(request);
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  try {
-    requireRole(ctx, "organization_owner", "security_admin");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  if (!can(ctx, "api-key.manage")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
   const body = await request.json().catch(() => null);
   const patch: { name?: string; scopes?: string[]; expiresAt?: Date | null } = {};
@@ -54,24 +54,24 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   try {
     const updated = await updateApiKey(ctx, id, patch);
     return NextResponse.json({ id: updated.id, name: updated.name, scopes: updated.scopes, revokedAt: updated.revokedAt?.toISOString() ?? null });
-  } catch {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  } catch (e) {
+    console.error("[/api/v1/auth/api-keys/[id]]", e);
+    if (isKeyNotFound(e)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await tenantContextFromRequest(request);
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  try {
-    requireRole(ctx, "organization_owner", "security_admin");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  if (!can(ctx, "api-key.manage")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
   try {
     await revokeApiKey(ctx, id);
     return NextResponse.json({ id, revoked: true });
-  } catch {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  } catch (e) {
+    console.error("[/api/v1/auth/api-keys/[id]]", e);
+    if (isKeyNotFound(e)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { tenantContextFromRequest } from "@/lib/tenant";
-import { requireRole } from "@/lib/auth/rbac";
+import { can } from "@/lib/auth/rbac";
 import { createApiKey, listApiKeys } from "@/lib/auth/api-keys";
 import { isScope } from "@/lib/auth/requireScope";
 
 export async function POST(request: NextRequest) {
   const ctx = await tenantContextFromRequest(request);
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  try {
-    requireRole(ctx, "organization_owner", "security_admin");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  if (!can(ctx, "api-key.manage")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const scopes = Array.isArray(body?.scopes) ? body.scopes.filter(isScope) : [];
@@ -32,11 +28,7 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const ctx = await tenantContextFromRequest(request);
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  try {
-    requireRole(ctx, "organization_owner", "security_admin");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  if (!can(ctx, "api-key.manage")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const keys = await listApiKeys(ctx);
   return NextResponse.json({
     keys: keys.map((k) => ({

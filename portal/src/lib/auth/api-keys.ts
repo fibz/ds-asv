@@ -151,7 +151,9 @@ export async function revokeApiKey(ctx: TenantContext, id: string) {
   });
 }
 
-/** Revokes the old key and issues a fresh one with the same name + scopes. */
+/** Revokes the old key and issues a fresh one with the same name + scopes.
+ * The replacement inherits the original's expiresAt — rotating an expiring key
+ * must never silently issue a permanent key (lifecycle security control). */
 export async function rotateApiKey(ctx: TenantContext, id: string) {
   return prisma.$transaction(async (tx) => {
     await setRlsContext(ctx.organizationId, tx);
@@ -161,7 +163,7 @@ export async function rotateApiKey(ctx: TenantContext, id: string) {
     const keyHash = await hashApiKey(rawKey);
     await tx.apiKey.update({ where: { id }, data: { revokedAt: new Date() } });
     const created = await tx.apiKey.create({
-      data: { name: before.name, keyHash, scopes: before.scopes, orgId: ctx.organizationId },
+      data: { name: before.name, keyHash, scopes: before.scopes, orgId: ctx.organizationId, expiresAt: before.expiresAt },
     });
     await recordAudit(ctx, "api-key.rotate", "ApiKey", id, { revokedAt: null }, { revokedAt: new Date() }, "rotated", tx);
     return { id: created.id, name: created.name, key: rawKey, scopes: created.scopes, expiresAt: created.expiresAt };

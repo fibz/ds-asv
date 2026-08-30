@@ -22,6 +22,15 @@ export async function POST(request: NextRequest) {
     const result = await applyImport(ctx, rows, idempotencyKey);
     return NextResponse.json(result, { status: 201 });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+    console.error("[/api/v1/assets/imports]", e);
+    const msg = e instanceof Error ? e.message : String(e);
+    // only genuine client-side CSV errors stay 400; DB outages/constraint
+    // failures are server errors — logged, never masked as client input errors
+    const isClientError =
+      msg === "CSV is empty" ||
+      msg === "CSV is missing a header row" ||
+      msg.startsWith("Unknown column: ");
+    if (isClientError) return NextResponse.json({ error: msg }, { status: 400 });
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

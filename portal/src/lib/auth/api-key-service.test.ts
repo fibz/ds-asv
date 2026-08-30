@@ -88,6 +88,21 @@ describe("api-key service (RLS + tenant scoping)", () => {
     expect(after.find((k) => k.id === rotated.id)?.revokedAt).toBeTruthy();
   });
 
+  it("rotate preserves the original key's expiresAt", async () => {
+    const expiresAt = new Date(Date.now() + 30 * 24 * 3600 * 1000);
+    const created = await createApiKey(ctx, { name: "expiring", scopes: ["admin"], expiresAt });
+    const rotated = await rotateApiKey(ctx, created.id);
+    // the replacement must inherit the expiry policy — rotating an expiring key
+    // must never silently issue a permanent key
+    expect(rotated.expiresAt).toBeTruthy();
+    expect(Math.abs(rotated.expiresAt!.getTime() - expiresAt.getTime())).toBeLessThanOrEqual(1000);
+    await withTenant(ORG, async (tx) => {
+      const row = await tx.apiKey.findUnique({ where: { id: rotated.id } });
+      expect(row?.expiresAt).toBeTruthy();
+      expect(Math.abs(row!.expiresAt!.getTime() - expiresAt.getTime())).toBeLessThanOrEqual(1000);
+    });
+  });
+
   it("cannot read or touch another tenant's key", async () => {
     const otherOrg = "org_apikey_foreign_9999";
     await withTenant(otherOrg, async (tx) => {

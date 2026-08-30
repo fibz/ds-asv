@@ -53,12 +53,20 @@ export async function verifyAssetToken(ctx: TenantContext, assetId: string, toke
       orderBy: { createdAt: "desc" },
     });
     if (!pending || !pending.challengeHash) throw new Error("No pending verification challenge");
+    // Retire invariant: a challenge issued before retirement (24h TTL) must not
+    // re-activate a retired asset. Resolve the asset and check BEFORE any state
+    // mutation — the verify path previously flipped retired assets back to
+    // active while createVerificationChallenge already guarded the inverse.
+    const asset = await tx.asset.findFirst({ where: { id: assetId, organizationId: ctx.organizationId } });
+    if (!asset) throw new Error("Asset not found");
+    if (asset.lifecycleState === "retired") throw new Error("Retired assets cannot be verified");
     if (pending.expiresAt && pending.expiresAt < new Date()) {
       // Mark expired in its own committed transaction — a throw inside the main
       // interactive tx would roll back the status write (Prisma rollbackOnError).
       await prisma.$transaction(async (tx) => {
         await setRlsContext(ctx.organizationId, tx);
         await tx.assetVerification.update({ where: { id: pending.id }, data: { status: "expired" } });
+        await recordAudit(ctx, "asset.verification-expired", "AssetVerification", pending.id, { status: "pending" }, { status: "expired" }, undefined, tx);
       });
       throw new Error("Verification challenge expired");
     }
@@ -69,11 +77,11 @@ export async function verifyAssetToken(ctx: TenantContext, assetId: string, toke
       where: { id: pending.id },
       data: { status: "verified", verifiedBy: ctx.userId, expiresAt },
     });
-    const asset = await tx.asset.update({
+    const updated = await tx.asset.update({
       where: { id: assetId },
       data: { verificationState: "verified", lifecycleState: "active", lastSeenAt: new Date() },
     });
     await recordAudit(ctx, "asset.verify", "AssetVerification", pending.id, { status: "pending" }, { status: "verified" }, undefined, tx);
-    return { verificationState: asset.verificationState, lifecycleState: asset.lifecycleState };
+    return { verificationState: updated.verificationState, lifecycleState: updated.lifecycleState };
   });
 }

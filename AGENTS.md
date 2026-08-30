@@ -15,6 +15,7 @@
 - **Test DB:** docker postgres `ds-asv-pg` on port 5433, db `asv_portal`, roles `asv` (superuser/admin, via `ADMIN_DATABASE_URL`) and `asv_app` (app, RLS-subject, via `DATABASE_URL`). `.env` in `portal/` is gitignored — copy from `.env.example` and set real passwords for local work.
 - **pnpm is broken in this sandbox** (read-only store) — use `npm`/`npx`. Cache: `npm install --cache /home/cchock/projects/.npm-cache`.
 - **Prisma 7 `migrate dev` is non-interactive-unfriendly** — use `npx prisma migrate diff` + `migrate deploy`. Generated client is gitignored: run `npx prisma generate` after a clean clone.
+- **After any `migrate diff`**, verify the partial unique index `Asset_active_unique` (`organizationId`, `type`, `canonicalIdentifier`) `WHERE "lifecycleState" <> 'retired'` is still present in the generated migration — `migrate diff` may drop it as drift since partial indexes are not expressible in `schema.prisma`. Re-append it if the diff drops it.
 - **App connects as `asv_app`** (fail-closed grants, RLS always ON). Admin ops (test seeding/cleanup) go through a second client from `ADMIN_DATABASE_URL`.
 - **`set_config('app.tenant_id', ...)` is transaction-scoped** — RLS context must be set inside `prisma.$transaction` with the tx client.
 - **`next build` requires `APP_MODE=prod`** (prod-lock guard, spec §6). CI must export it.
