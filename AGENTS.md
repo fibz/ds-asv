@@ -5,9 +5,10 @@
 - **What:** Commercial PCI DSS compliance portal. SaaS, multi-tenant (nested orgs — QSA resellers + merchants).
 - **Stack:** Next.js/TS portal (`portal/`) + Python/FastAPI scanner (`scanner/`) + PostgreSQL (RLS). Self-hosted Keycloak (OIDC), Vault, MinIO/S3.
 - **Repo:** https://github.com/fibz/ds-asv — public, branch `main`. Pushed and in sync (commit `42fc3d5`).
-- **Phase 1 DONE** (tenant & identity foundation): RLS multi-tenancy (non-superuser `asv_app` role), Keycloak OIDC header auth + salted API keys, RBAC (`hasRole`/`can`/`requireRole`), single-use expiring invitations, append-only audit (DB-enforced), cross-tenant isolation tests. **94/94 tests green** (`npx vitest run` in `portal/`).
-- **Design docs:** `docs/superpowers/specs/2026-08-29-ds-asv-pci-portal-design.md` (approved). Phase 1 plan: `docs/superpowers/plans/2026-08-29-phase1-tenant-identity.md`.
-- **NEXT:** Phase 2 = asset inventory (per build order: identity → assets → scope → scan → reporting+QA).
+- **Phase 1 DONE** (tenant & identity foundation): RLS multi-tenancy (non-superuser `asv_app` role), Keycloak OIDC header auth + salted API keys, RBAC (`hasRole`/`can`/`requireRole`), single-use expiring invitations, append-only audit (DB-enforced), cross-tenant isolation tests.
+- **Phase 2 DONE** (asset inventory): Asset/AssetVerification/AssetImport models + RLS, identifier normalization (ipv4/ipv6/cidr/fqdn), CSV import w/ preview + downloadable invalid rows + idempotency, dedupe (duplicates never create extra assets), lifecycle/retire (referenced-asset history preserved — row + audit + verification, never hard-deleted), DNS TXT/manual verification, API routes (CRUD/import/retire/verification), assets UI (list/filter/detail + import), ApiKey RLS revival. **162/162 tests green** (`npx vitest run` in `portal/`).
+- **Design docs:** `docs/superpowers/specs/2026-08-29-ds-asv-pci-portal-design.md` (approved). Phase 1 plan: `docs/superpowers/plans/2026-08-29-phase1-tenant-identity.md`. Phase 2 plan: `docs/superpowers/plans/2026-08-30-phase2-asset-inventory.md`.
+- **NEXT:** Phase 3 = versioned scope & authorization (per build order: identity → assets → scope → scan → reporting+QA).
 
 ## Environment notes
 
@@ -36,7 +37,6 @@
 
 ## Known follow-ups (deferred, tracked)
 
-- ApiKey RLS + grants + route revival (Phase 2 FIRST task) — routes currently return 501.
 - Cookie-session auth + sign-in UI replacement (Keycloak hosted login) — dashboard layout is header-auth only.
 - Hardcoded dev DB passwords → env/Vault bootstrap before any non-dev run.
 - Remaining Clerk UI imports (api/scanners route, dashboard pages).
