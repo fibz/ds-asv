@@ -14,6 +14,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json(result);
   } catch (e) {
     const msg = (e as Error).message;
-    return NextResponse.json({ error: msg }, { status: /expired|invalid/i.test(msg) ? 400 : 404 });
+    return NextResponse.json({ error: msg }, { status: /expired|invalid|required/i.test(msg) ? 400 : 404 });
   }
 }

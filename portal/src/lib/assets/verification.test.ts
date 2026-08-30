@@ -74,5 +74,12 @@ describe("asset verification", () => {
     await admin.query(`UPDATE "AssetVerification" SET "expiresAt" = now() - interval '1 hour' WHERE id = $1`, [challenge.verificationId]);
     await admin.end();
     await expect(verifyAssetToken(ctx, a.id, challenge.token)).rejects.toThrow(/expired/i);
+    // expired status must persist (marking runs in its own committed tx — a
+    // throw inside the main interactive tx would roll the write back)
+    const expired = await prisma.$transaction(async (tx) => {
+      await setRlsContext(ORG, tx);
+      return tx.assetVerification.findUnique({ where: { id: challenge.verificationId } });
+    });
+    expect(expired?.status).toBe("expired");
   });
 });

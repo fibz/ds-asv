@@ -54,7 +54,12 @@ export async function verifyAssetToken(ctx: TenantContext, assetId: string, toke
     });
     if (!pending || !pending.challengeHash) throw new Error("No pending verification challenge");
     if (pending.expiresAt && pending.expiresAt < new Date()) {
-      await tx.assetVerification.update({ where: { id: pending.id }, data: { status: "expired" } });
+      // Mark expired in its own committed transaction — a throw inside the main
+      // interactive tx would roll back the status write (Prisma rollbackOnError).
+      await prisma.$transaction(async (tx) => {
+        await setRlsContext(ctx.organizationId, tx);
+        await tx.assetVerification.update({ where: { id: pending.id }, data: { status: "expired" } });
+      });
       throw new Error("Verification challenge expired");
     }
     if (pending.challengeHash !== presented) throw new Error("Invalid verification token");
