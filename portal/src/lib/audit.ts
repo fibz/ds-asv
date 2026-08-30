@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma-client";
 import { setRlsContext } from "@/lib/tenant";
-import type { Prisma } from "@/lib/generated/prisma";
 import type { TenantContext } from "@/lib/tenant";
+import type { Prisma } from "@/lib/generated/prisma";
 
 /**
  * Appends an AuditEvent row. This is the ONLY write path for audit events —
@@ -12,29 +12,33 @@ import type { TenantContext } from "@/lib/tenant";
  * RLS handling: AuditEvent is protected by the `audit_event_tenant_isolation`
  * policy (USING/WITH CHECK `"organizationId" = current_setting('app.tenant_id')`),
  * so the INSERT only succeeds when the session tenant context is bound to
- * `ctx.organizationId`. `set_config(..., true)` is TRANSACTION-scoped, so this
- * helper owns its own transaction (the same shape as resolveTenantContext and
- * createInvitation): it opens `prisma.$transaction`, binds the context on that
- * transaction's connection, and runs the create through the same `tx` client.
- * Callers only pass the TenantContext — they never touch RLS plumbing.
+ * `ctx.organizationId`.
  *
- * Note: the transaction-scoped context is deliberately NOT made available to
- * the caller's own transaction (no `tx` parameter). Keeping the audit write in
- * its own transaction avoids the footgun of rebinding `app.tenant_id` inside a
- * caller transaction that already bound a different tenant; audit rows are
- * side-effect logs and do not need to be atomic with the triggering operation.
+ * Two call shapes:
+ *
+ * 1. WITH `tx` (Phase 2 service layer: api-key create/update/revoke/rotate):
+ *    the caller owns the transaction and has already bound the tenant context
+ *    on it (`setRlsContext(ctx.organizationId, tx)`), so the audit write runs
+ *    through the caller's `tx` and is atomic with the triggering operation.
+ *
+ * 2. WITHOUT `tx` (historical callers, e.g. audit.test.ts): keep the
+ *    historical behavior — this helper owns its own transaction, binds the
+ *    context on that transaction's connection, and runs the create through the
+ *    same `tx` client. Callers only pass the TenantContext — they never touch
+ *    RLS plumbing. (A bare `prisma.auditEvent.create` with no bound context is
+ *    rejected by RLS: verified 42501 "new row violates row-level security".)
  */
 export async function recordAudit(
   ctx: TenantContext,
   action: string,
   resourceType: string,
   resourceId?: string,
-  before?: Prisma.InputJsonValue,
-  after?: Prisma.InputJsonValue,
-  reason?: string
+  before?: unknown,
+  after?: unknown,
+  reason?: string,
+  tx?: Prisma.TransactionClient
 ) {
-  return prisma.$transaction(async (tx) => {
-    await setRlsContext(ctx.organizationId, tx);
+  if (tx) {
     return tx.auditEvent.create({
       data: {
         organizationId: ctx.organizationId,
@@ -42,8 +46,23 @@ export async function recordAudit(
         action,
         resourceType,
         resourceId,
-        before: before != null ? before : undefined,
-        after: after != null ? after : undefined,
+        before: before != null ? (before as any) : undefined,
+        after: after != null ? (after as any) : undefined,
+        reason,
+      },
+    });
+  }
+  return prisma.$transaction(async (innerTx) => {
+    await setRlsContext(ctx.organizationId, innerTx);
+    return innerTx.auditEvent.create({
+      data: {
+        organizationId: ctx.organizationId,
+        actorUserId: ctx.userId,
+        action,
+        resourceType,
+        resourceId,
+        before: before != null ? (before as any) : undefined,
+        after: after != null ? (after as any) : undefined,
         reason,
       },
     });

@@ -14,6 +14,13 @@ export type Scope =
 
 const ADMIN_SCOPE: Scope = "admin";
 
+export function isScope(value: unknown): value is Scope {
+  return (
+    typeof value === "string" &&
+    (["read:scans","write:scans","read:waf","manage:waf","read:siem","write:siem","read:compliance","admin"] as const).includes(value as Scope)
+  );
+}
+
 /**
  * Resolves the API key from the `X-API-Key` header and checks that it has the
  * required scope. Admin scope satisfies all requirements.
