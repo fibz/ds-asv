@@ -219,6 +219,15 @@ describe("/api/v1/auth/api-keys/[id] (GET/PATCH/DELETE)", () => {
     expect(response.status).toBe(404);
   });
 
+  it("returns 403 for GET when the caller is not a manager", async () => {
+    vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "report_viewer", status: "active" } as never);
+    const response = await getId(
+      authedRequest("/api/v1/auth/api-keys/ak_1"),
+      { params: Promise.resolve({ id: "ak_1" }) }
+    );
+    expect(response.status).toBe(403);
+  });
+
   it("renames a key via PATCH (200)", async () => {
     vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ organizationId: "org_1", role: "organization_owner", status: "active" } as never);
     vi.mocked(prisma.apiKey.findUnique).mockResolvedValueOnce(keyRow({ name: "old" }) as never);

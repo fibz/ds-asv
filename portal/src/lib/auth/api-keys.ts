@@ -8,14 +8,11 @@ const KEY_PREFIX = "sk_live_";
 const SALT_BYTES = 16;
 
 /**
- * ApiKey RLS policies + grants are deliberately deferred to Phase 2 (its first
- * task). asv_app has NO grants on "ApiKey" (fail-closed by design), so any v1
- * api-keys route that reached the table would 500 with permission-denied.
- * Until Phase 2 revives the surface, every api-keys route short-circuits to
- * this explicit, self-documenting 501 instead of an opaque 500.
+ * ApiKey service layer (Phase 2, Task 2): the v1 api-keys routes are live and
+ * run through this RLS-scoped service. Every operation binds the tenant
+ * context (setRlsContext) inside its own transaction before touching "ApiKey",
+ * so a caller can only ever see or mutate its own org's keys.
  */
-export const API_KEYS_NOT_IMPLEMENTED =
-  "Not Implemented — API key management requires Phase 2 (ApiKey RLS + grants)";
 
 /**
  * Generates a new API key in the form `sk_live_<48 random chars>`.
