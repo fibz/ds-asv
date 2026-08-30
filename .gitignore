@@ -51,3 +51,6 @@ scanner/prisma/generated/
 
 # SDD scratch workspace
 .superpowers/
+
+# worktree symlink to shared node_modules
+portal/node_modules
