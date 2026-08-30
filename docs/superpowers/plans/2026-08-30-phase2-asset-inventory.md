@@ -1194,7 +1194,10 @@ function ipv6ToBigInt(groups: string[]): bigint {
 function bigIntToIpv6Groups(n: bigint): string[] {
   const groups: string[] = [];
   for (let i = 7; i >= 0; i--) {
-    groups.unshift(((n >> BigInt(i * 16)) & 0xffffn).toString(16).padStart(4, "0"));
+    // NOTE: push, not unshift — i runs 7→0 (most-significant first), so
+    // pushing preserves order. unshift here reverses the groups (plan bug
+    // fixed during Task 4; the brief's own test proved it).
+    groups.push(((n >> BigInt(i * 16)) & 0xffffn).toString(16).padStart(4, "0"));
   }
   return groups;
 }
