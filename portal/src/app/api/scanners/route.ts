@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { provisionKeycloakUser } from "@/lib/auth/keycloak";
 
 export async function POST(request: Request) {
-  const { userId } = await auth();
-
-  if (!userId) {
+  const keycloakUser = await provisionKeycloakUser(request);
+  if (!keycloakUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -27,9 +26,8 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const { userId } = await auth();
-
-  if (!userId) {
+  const keycloakUser = await provisionKeycloakUser(request);
+  if (!keycloakUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

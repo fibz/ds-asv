@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UserButton } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -43,9 +42,6 @@ export function DashboardSidebar() {
             </Link>
           ))}
         </nav>
-        <div className="p-4 border-t border-gray-200">
-          <UserButton />
-        </div>
       </div>
     </div>
   );

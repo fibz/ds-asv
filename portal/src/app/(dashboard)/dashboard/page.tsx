@@ -1,10 +1,7 @@
-import { auth } from "@clerk/nextjs/server";
 import { ComplianceCard } from "@/components/compliance/card";
 import { ScanCard } from "@/components/scanners/card";
 
 export default async function DashboardPage() {
-  const { userId } = await auth();
-
   return (
     <div className="space-y-8">
       <div>

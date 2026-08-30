@@ -1,36 +1,18 @@
-import { auth } from "@clerk/nextjs/server";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma-client";
-import { maskApiKey } from "@/lib/auth/api-keys";
+import { tenantContextFromRequest } from "@/lib/tenant";
+import { listApiKeys } from "@/lib/auth/api-keys";
 import { ApiKeyForm } from "@/components/dashboard/ApiKeyForm";
-import { ApiKeyTable, type ApiKey } from "@/components/dashboard/ApiKeyTable";
-
-async function getKeys(orgId: string): Promise<ApiKey[]> {
-  const keys = await prisma.apiKey.findMany({
-    where: { orgId },
-    orderBy: { createdAt: "desc" },
-  });
-
-  return keys.map((k: { id: string; name: string; keyHash: string; scopes: string[]; lastUsedAt: Date | null; expiresAt: Date | null; revokedAt: Date | null; createdAt: Date }) => ({
-    id: k.id,
-    name: k.name,
-    maskedKey: maskApiKey(k.keyHash),
-    scopes: k.scopes,
-    lastUsedAt: k.lastUsedAt?.toISOString() || null,
-    expiresAt: k.expiresAt?.toISOString() || null,
-    revokedAt: k.revokedAt?.toISOString() || null,
-    createdAt: k.createdAt.toISOString(),
-  }));
-}
+import { ApiKeyTable } from "@/components/dashboard/ApiKeyTable";
 
 export default async function ApiKeysPage() {
-  const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  // Keycloak session identity (header-based; cookie-session UI is a known
+  // follow-up). organizationId is derived from the membership — never from
+  // the URL or client input.
+  const ctx = await tenantContextFromRequest({ headers: await headers() });
+  if (!ctx) redirect("/sign-in");
 
-  const user = await prisma.user.findUnique({ where: { clerkId: userId } });
-  if (!user?.orgId) redirect("/dashboard");
-
-  const keys = await getKeys(user.orgId);
+  const keys = await listApiKeys(ctx);
 
   return (
     <div className="space-y-8">
@@ -45,7 +27,18 @@ export default async function ApiKeysPage() {
       </div>
 
       <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
-        <ApiKeyTable keys={keys} />
+        <ApiKeyTable
+          keys={keys.map((k) => ({
+            id: k.id,
+            name: k.name,
+            maskedKey: k.maskedKey,
+            scopes: k.scopes,
+            lastUsedAt: k.lastUsedAt?.toISOString() || null,
+            expiresAt: k.expiresAt?.toISOString() || null,
+            revokedAt: k.revokedAt?.toISOString() || null,
+            createdAt: k.createdAt.toISOString(),
+          }))}
+        />
       </div>
     </div>
   );
