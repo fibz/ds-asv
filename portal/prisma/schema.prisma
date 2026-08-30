@@ -25,6 +25,9 @@ model Organization {
   contacts      Contact[]
   auditEvents   AuditEvent[]
   invitations   Invitation[]
+  assets            Asset[]
+  assetVerifications AssetVerification[]
+  assetImports      AssetImport[]
 }
 
 model Compliance {
@@ -180,5 +183,74 @@ model Invitation {
   createdAt      DateTime      @default(now())
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId])
+}
+
+// Durable inventory object. MVP types: ipv4, ipv6, cidr, fqdn.
+// Lifecycle: draft, pending_verification, active, suspended, retiring, retired,
+// rejected. NEVER hard-delete — retire instead (scope/scan/finding/report/audit
+// history depends on the row). Dedupe: partial unique index in the migration
+// on (organizationId, type, canonicalIdentifier) WHERE lifecycleState <> 'retired'.
+model Asset {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  type                String // ipv4 | ipv6 | cidr | fqdn
+  canonicalIdentifier String // normalized (lowercase fqdn, collapsed ip, masked cidr)
+  displayName         String?
+  owner               String? // accountable owner (name/email) — ownership contact
+  environment         String? // production | staging | development | test | other
+  criticality         String   @default("medium") // low | medium | high | critical
+  lifecycleState      String   @default("pending_verification")
+  verificationState   String   @default("unverified") // unverified | pending | verified | expired
+  source              String   @default("manual") // manual | csv_import
+  lastSeenAt          DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  verifications       AssetVerification[]
+
+  @@index([organizationId])
+  @@index([organizationId, type])
+  @@index([organizationId, lifecycleState])
+  @@index([organizationId, canonicalIdentifier])
+}
+
+// Control/authority evidence for one asset. method: dns_txt | manual.
+// status: pending | verified | expired | failed. Challenge tokens are stored
+// as SHA-256 hashes (challengeHash), never raw.
+model AssetVerification {
+  id             String   @id @default(cuid())
+  organizationId String
+  assetId        String
+  method         String // dns_txt | manual
+  status         String   @default("pending")
+  challengeHash  String?
+  verifiedBy     String?
+  expiresAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  asset          Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@index([organizationId])
+  @@index([status])
+}
+
+// Idempotent CSV import record. Replaying the same idempotencyKey returns the
+// stored result instead of re-applying. invalidRows carries the downloadable
+// error report for the UI (exit criterion: invalid rows downloadable).
+model AssetImport {
+  id             String   @id @default(cuid())
+  organizationId String
+  idempotencyKey String
+  status         String   @default("completed")
+  summary        Json // { total, created, duplicates, invalid }
+  invalidRows    Json // [{ row: {...}, errors: string[] }]
+  createdBy      String
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, idempotencyKey])
   @@index([organizationId])
 }

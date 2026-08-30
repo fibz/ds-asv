@@ -13,6 +13,12 @@ if (!cliUrl) {
   );
 }
 
+// Throwaway shadow DB for `prisma migrate diff --from-migrations` (Prisma 7:
+// the shadow URL is configured here — `--shadow-database-url` no longer
+// exists — and diff creates/drops tables inside it, never the live DB).
+// Same host/port/user as ADMIN_DATABASE_URL, only the database name differs.
+const shadowUrl = cliUrl.replace(/\/[^/]+$/, "/asv_shadow");
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
@@ -21,5 +27,6 @@ export default defineConfig({
   },
   datasource: {
     url: cliUrl,
+    shadowDatabaseUrl: shadowUrl,
   },
 });
