@@ -1675,7 +1675,13 @@ describe("CSV import (idempotent, invalid rows downloadable)", () => {
   });
 
   it("applies an import idempotently and records invalid rows", async () => {
-    const rows = parseCsv(`type,identifier,display_name,owner\nipv4,10.0.0.2,app-1,a@b.com\nfqdn,api.example.com,api,a@b.com\nipv4,999.1.1.1,bad-row,\n`);
+    // NOTE (fixed during Task 6): the original brief CSV here was internally
+    // unsatisfiable — 3 rows but 4 asserted outcomes, a comment referencing a
+    // 10.0.0.1 row that wasn't in the CSV, and an invalid row (999.1.1.1)
+    // whose error can't match /invalid/i. The minimal consistent data: add the
+    // duplicate row (10.0.0.1 is the seeded asset) and use the preview test's
+    // invalid fqdn row. 4 rows → created=2, duplicates=1, invalid=1, count=3.
+    const rows = parseCsv(`type,identifier,display_name,owner\nipv4,10.0.0.2,app-1,a@b.com\nfqdn,api.example.com,api,a@b.com\nipv4,10.0.0.1,dup,a@b.com\nfqdn,-bad.com,invalid,\n`);
     const first = await applyImport(ctx, rows, "imp-key-1");
     expect(first.summary.created).toBe(2);
     expect(first.summary.duplicates).toBe(1); // 10.0.0.1 already exists
@@ -1691,8 +1697,8 @@ describe("CSV import (idempotent, invalid rows downloadable)", () => {
 
     // result is retrievable (downloadable invalid rows)
     const stored = await getImportResult(ctx, first.importId);
-    expect(stored?.summary.created).toBe(2);
-    expect(stored?.invalidRows).toHaveLength(1);
+    expect((stored?.summary as { created?: number } | undefined)?.created).toBe(2);
+    expect((stored?.invalidRows as unknown[] | undefined)?.length).toBe(1);
   });
 });
 ```
