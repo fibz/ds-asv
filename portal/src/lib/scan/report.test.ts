@@ -76,12 +76,16 @@ describe("report generation", () => {
 
 describe("QA attestation gate", () => {
   let scanId = "";
+  let draftScanId = "";
+  let draftAssetId = "";
   beforeAll(async () => {
     vi.stubEnv("APP_MODE", "prod");
     await adminWipe();
     await withTenant(ORG, (tx) => tx.organization.create({ data: { id: ORG, name: "Report Org" } }));
     await withTenant(ORG, (tx) => tx.user.create({ data: { id: USER, idpId: "kc-report", email: "r@x.com" } }));
     assetId = (await withTenant(ORG, (tx) => tx.asset.create({ data: { id: "asset_report_1", organizationId: ORG, type: "ipv4", canonicalIdentifier: "10.3.3.3", lifecycleState: "active", verificationState: "verified" } }))).id;
+    draftAssetId = (await withTenant(ORG, (tx) => tx.asset.create({ data: { id: "asset_report_2", organizationId: ORG, type: "ipv4", canonicalIdentifier: "10.3.3.4", lifecycleState: "active", verificationState: "verified" } }))).id;
+    // Scan for test 1 (fully transitions to attested).
     scanId = (await createScanFromAssets({ ...ctx, role: "scan_operator" }, { name: "report scan", assetIds: [assetId] })).id;
     await transitionScanStatus({ ...ctx, role: "scan_operator" }, scanId, "RUNNING");
     await ingestFindings({ ...ctx, role: "scan_operator" }, scanId, [
@@ -89,6 +93,13 @@ describe("QA attestation gate", () => {
       { assetId, qid: "q2", severity: "2", pciSeverity: "Low", title: "Banner" },
     ]);
     await transitionScanStatus({ ...ctx, role: "scan_operator" }, scanId, "COMPLETED");
+    // Distinct scan for test 2 — its report must stay a genuine draft.
+    draftScanId = (await createScanFromAssets({ ...ctx, role: "scan_operator" }, { name: "draft report scan", assetIds: [draftAssetId] })).id;
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, draftScanId, "RUNNING");
+    await ingestFindings({ ...ctx, role: "scan_operator" }, draftScanId, [
+      { assetId: draftAssetId, qid: "q3", severity: "1", pciSeverity: "Low", title: "Minor" },
+    ]);
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, draftScanId, "COMPLETED");
   });
   afterAll(async () => { vi.unstubAllEnvs(); await adminWipe(); await prisma.$disconnect(); });
 
@@ -103,11 +114,26 @@ describe("QA attestation gate", () => {
     const attested = await attestReport(staff, report.id);
     expect(attested?.status).toBe("attested");
     expect(isReportFinal(attested!)).toBe(true);
+    // audit rows prove the submit→attest writes
+    const submitAudits = await withTenant(ORG, (tx) => tx.auditEvent.findMany({ where: { action: "report.submitted", resourceId: report.id } }));
+    const attestAudits = await withTenant(ORG, (tx) => tx.auditEvent.findMany({ where: { action: "report.attested", resourceId: report.id } }));
+    expect(submitAudits.length).toBeGreaterThanOrEqual(1);
+    expect(attestAudits.length).toBeGreaterThanOrEqual(1);
   });
 
   it("attestation transitions are guarded (draft → attested rejected)", async () => {
-    const fresh = await buildReport(ctx, scanId);
+    // A genuine DRAFT report from a distinct scan (not the attested report from test 1).
+    const draftReport = await buildReport(ctx, draftScanId);
+    expect(draftReport.status).toBe("draft");
+    expect(isReportFinal(draftReport)).toBe(false);
     const staff: TenantContext = { ...ctx, isStaff: true };
-    await expect(attestReport(staff, fresh.id)).rejects.toThrow(/submitted/);
+    // draft → attested is invalid (must go through submitted first)
+    await expect(attestReport(staff, draftReport.id)).rejects.toThrow(/submitted/);
+    // ...but the full draft → submitted → attested path is valid
+    const submitted = await submitReport(ctx, draftReport.id);
+    expect(submitted?.status).toBe("submitted");
+    const attested = await attestReport(staff, draftReport.id);
+    expect(attested?.status).toBe("attested");
+    expect(isReportFinal(attested!)).toBe(true);
   });
 });
