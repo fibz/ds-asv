@@ -28,6 +28,7 @@ model Organization {
   assets            Asset[]
   assetVerifications AssetVerification[]
   assetImports      AssetImport[]
+  sessions          Session[]
 }
 
 model Compliance {
@@ -99,6 +100,7 @@ model User {
   createdAt     DateTime                 @default(now())
   updatedAt     DateTime                 @updatedAt
   memberships   OrganizationMembership[]
+  sessions      Session[]
 }
 
 model OrganizationMembership {
@@ -184,6 +186,30 @@ model Invitation {
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
+}
+
+// Session registry: one row per authenticated session (Keycloak-derived).
+// tokenHash is the SHA-256 hash of the presented session token — the raw
+// token is never stored. Sessions are REVOKED (revokedAt), never hard-deleted.
+// RLS: session_tenant_isolation policy (organizationId = app.tenant_id);
+// GRANT SELECT, INSERT, UPDATE only — NO DELETE for asv_app (see migration
+// 20260831000001_user_center_sessions).
+model Session {
+  id             String        @id @default(cuid())
+  organizationId String
+  userId         String
+  tokenHash      String        @unique
+  userAgent      String?
+  ipHash         String?
+  lastSeenAt     DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  revokedAt      DateTime?
+  revokedById    String?
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId])
+  @@index([organizationId, lastSeenAt])
 }
 
 // Durable inventory object. MVP types: ipv4, ipv6, cidr, fqdn.
