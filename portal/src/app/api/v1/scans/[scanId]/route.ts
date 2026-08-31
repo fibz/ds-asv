@@ -1,0 +1,34 @@
+import { NextRequest, NextResponse } from "next/server";
+import { tenantContextFromRequest } from "@/lib/tenant";
+import { can } from "@/lib/auth/rbac";
+import { getScan, transitionScanStatus } from "@/lib/scan/service";
+import { routeErrorResponse } from "@/lib/http-error";
+
+export async function GET(request: NextRequest, { params }: { params: Promise<{ scanId: string }> }) {
+  const ctx = await tenantContextFromRequest(request);
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!can(ctx, "scan.view")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const { scanId } = await params;
+  const scan = await getScan(ctx, scanId);
+  if (!scan) return NextResponse.json({ error: "Scan not found" }, { status: 404 });
+  return NextResponse.json(scan);
+}
+
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ scanId: string }> }) {
+  const ctx = await tenantContextFromRequest(request);
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!can(ctx, "scan.run")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const { scanId } = await params;
+  const body = await request.json().catch(() => null);
+  const status = typeof body?.status === "string" ? body.status : "";
+  if (!["RUNNING", "COMPLETED", "FAILED"].includes(status)) {
+    return NextResponse.json({ error: "status must be RUNNING, COMPLETED or FAILED" }, { status: 400 });
+  }
+  try {
+    const scan = await transitionScanStatus(ctx, scanId, status as "RUNNING" | "COMPLETED" | "FAILED");
+    if (!scan) return NextResponse.json({ error: "Scan not found" }, { status: 404 });
+    return NextResponse.json(scan);
+  } catch (err) {
+    return routeErrorResponse(err);
+  }
+}
