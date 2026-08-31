@@ -7,10 +7,11 @@ import { verifyScanManifest } from "@/lib/scan/manifest";
 
 vi.mock("jose", () => ({ jwtVerify: vi.fn(), createRemoteJWKSet: vi.fn(() => ({ mock: "jwks" })) }));
 
-// The findings route treats ANY `Authorization: Bearer <token>` as a scanner
-// manifest first (POST 401 when it doesn't verify), then falls through to the
-// user ctx. To exercise the user-ctx ingest path we control the manifest
-// verifier here; the real verifyScanManifest is covered by the manifest tests.
+// F1 fix: the route tries the Bearer token as a manifest first, then falls
+// through to the user-context path when it does not verify (the token is a
+// user's Keycloak JWT). We control verifyScanManifest here to cover both the
+// scanner-manifest and user-JWT paths; the real HMAC verifier is covered by
+// the manifest tests.
 vi.mock("@/lib/scan/manifest", () => ({
   verifyScanManifest: vi.fn(),
   issueScanManifest: vi.fn(),
@@ -35,8 +36,6 @@ vi.mock("@/lib/prisma-client", () => {
 const CLAIMS = { sub: "kc-findings-route", email: "op@x.com" };
 const SCAN_ID = "scan_findings_route";
 
-const validManifest = { scanId: SCAN_ID, organizationId: "org_1", targets: [{ type: "ipv4", canonicalIdentifier: "10.0.0.1" }] };
-
 const scanRow = () => ({
   id: SCAN_ID, organizationId: "org_1", name: "Q ASV", status: "PENDING", requestedById: "u1",
   manifestIssuedAt: null, manifestExpiresAt: null, startedAt: new Date(), completedAt: null,
@@ -59,7 +58,6 @@ function setupUser(role: string) {
 }
 
 function setupIngest() {
-  vi.mocked(verifyScanManifest).mockResolvedValue(validManifest as never);
   vi.mocked(prisma.scan.findUnique).mockResolvedValue(scanRow() as never);
   vi.mocked(prisma.finding.findUnique).mockResolvedValue(null as never);
   vi.mocked(prisma.finding.create).mockResolvedValue({ id: "f1", scanId: SCAN_ID, assetId: "a1", qid: "q1" } as never);
@@ -73,13 +71,26 @@ describe("scan findings routes", () => {
   });
   afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
 
-  it("POST 401 when the bearer token is not a valid manifest", async () => {
+  it("POST 401 when the Bearer is not a manifest and there is no valid user ctx", async () => {
+    // Bearer does not verify as a manifest (bogus token / invalid JWT), and no
+    // valid user ctx resolves → tenantContextFromRequest returns null → 401.
     vi.mocked(verifyScanManifest).mockResolvedValue(null as never);
+    vi.mocked(jwtVerify).mockRejectedValue(new Error("bad jwt"));
     const res = await POST(req(`/api/v1/scans/${SCAN_ID}/findings`, "POST", { findings: [] }), { params: Promise.resolve({ scanId: SCAN_ID }) });
     expect(res.status).toBe(401);
   });
 
-  it("POST 201 with a user ctx that has scan.run", async () => {
+  it("POST 401 when the Bearer verifies as a manifest for a DIFFERENT scan", async () => {
+    vi.mocked(verifyScanManifest).mockResolvedValue({ scanId: "scan_other", organizationId: "org_1", targets: [] } as never);
+    setupUser("scan_operator");
+    const res = await POST(req(`/api/v1/scans/${SCAN_ID}/findings`, "POST", { findings: [] }), { params: Promise.resolve({ scanId: SCAN_ID }) });
+    expect(res.status).toBe(401);
+  });
+
+  it("POST 201 with a user ctx that has scan.run (Bearer is a non-verifying user JWT)", async () => {
+    // A real user's Keycloak JWT does NOT verify as a manifest → fall through to
+    // the user-context path, which grants scan.run → 201.
+    vi.mocked(verifyScanManifest).mockResolvedValue(null as never);
     setupUser("scan_operator");
     setupIngest();
     const res = await POST(
@@ -90,7 +101,19 @@ describe("scan findings routes", () => {
     expect((await res.json()).count).toBe(1);
   });
 
+  it("POST 201 with a valid scanner manifest for this scanId", async () => {
+    vi.mocked(verifyScanManifest).mockResolvedValue({ scanId: SCAN_ID, organizationId: "org_1", targets: [{ type: "ipv4", canonicalIdentifier: "10.0.0.1" }] } as never);
+    setupIngest();
+    const res = await POST(
+      req(`/api/v1/scans/${SCAN_ID}/findings`, "POST", { findings: [{ assetId: "a1", qid: "q1", severity: "4", title: "TLS" }] }),
+      { params: Promise.resolve({ scanId: SCAN_ID }) }
+    );
+    expect(res.status).toBe(201);
+    expect((await res.json()).count).toBe(1);
+  });
+
   it("POST 400 when the findings array is missing", async () => {
+    vi.mocked(verifyScanManifest).mockResolvedValue(null as never);
     setupUser("scan_operator");
     setupIngest();
     const res = await POST(req(`/api/v1/scans/${SCAN_ID}/findings`, "POST", { foo: "bar" }), { params: Promise.resolve({ scanId: SCAN_ID }) });

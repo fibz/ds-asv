@@ -11,9 +11,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const manifestMatch = /^Bearer\s+(.+)$/i.exec(auth);
   let orgId: string | null = null;
   if (manifestMatch) {
+    // A Bearer token may be either a scanner manifest OR a real user's
+    // Keycloak JWT (tenantContextFromRequest reads the same header). Try the
+    // manifest first (scanner path is primary): if it verifies for THIS scan,
+    // bind orgId from the manifest; if it verifies for a DIFFERENT scan, reject
+    // (manifest for the wrong scan). If it does not verify, it is a user JWT —
+    // fall through to the user-context path rather than 401ing.
     const verified = await verifyScanManifest(manifestMatch[1]);
     if (verified && verified.scanId === scanId) orgId = verified.organizationId;
-    else return NextResponse.json({ error: "Invalid or expired manifest" }, { status: 401 });
+    else if (verified) return NextResponse.json({ error: "Invalid or expired manifest" }, { status: 401 });
   }
   const ctx = await tenantContextFromRequest(request);
   if (!orgId) {
