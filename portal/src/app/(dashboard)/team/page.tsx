@@ -9,6 +9,7 @@ import { MemberInviteForm } from "@/components/dashboard/MemberInviteForm";
 export default async function TeamPage() {
   const ctx = await tenantContextFromRequest({ headers: await headers() });
   if (!ctx) redirect("/sign-in");
+  if (!can(ctx, "team.view")) redirect("/dashboard");
   const canManage = can(ctx, "team.manage");
   const members = (await listTeamMembers(ctx)).map((m) => ({ ...m, joinedAt: m.joinedAt?.toISOString() ?? null }));
   return (

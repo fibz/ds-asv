@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { tenantContextFromRequest } from "@/lib/tenant";
 import { can } from "@/lib/auth/rbac";
 import { getSession, revokeSession } from "@/lib/org/sessions";
+import { routeErrorResponse } from "@/lib/http-error";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ sessionId: string }> }) {
   const ctx = await tenantContextFromRequest(request);
@@ -13,13 +14,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!isOwn && !can(ctx, "session.revoke")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const revoked = await revokeSession(ctx, sessionId);
-  return NextResponse.json({
-    id: revoked!.id,
-    userId: revoked!.userId,
-    userAgent: revoked!.userAgent,
-    lastSeenAt: revoked!.lastSeenAt.toISOString(),
-    createdAt: revoked!.createdAt.toISOString(),
-    revokedAt: revoked!.revokedAt?.toISOString() ?? null,
-  });
+  try {
+    const revoked = await revokeSession(ctx, sessionId);
+    return NextResponse.json({
+      id: revoked!.id,
+      userId: revoked!.userId,
+      userAgent: revoked!.userAgent,
+      lastSeenAt: revoked!.lastSeenAt.toISOString(),
+      createdAt: revoked!.createdAt.toISOString(),
+      revokedAt: revoked!.revokedAt?.toISOString() ?? null,
+    });
+  } catch (err) {
+    return routeErrorResponse(err);
+  }
 }

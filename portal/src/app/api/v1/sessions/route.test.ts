@@ -47,7 +47,11 @@ function params(sessionId: string) {
 }
 
 describe("session routes", () => {
-  beforeEach(() => { vi.stubEnv("APP_MODE", "prod"); });
+  beforeEach(() => {
+    vi.stubEnv("KEYCLOAK_ISSUER", "https://keycloak.test");
+    vi.stubEnv("KEYCLOAK_CLIENT_ID", "test-client");
+    vi.stubEnv("APP_MODE", "prod");
+  });
   afterEach(() => { vi.unstubAllEnvs(); });
 
   it("GET lists sessions for team.view roles, 403 for viewers", async () => {

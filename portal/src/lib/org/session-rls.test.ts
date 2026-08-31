@@ -46,7 +46,7 @@ describe("Session RLS", () => {
     await withTenant(ORG, (tx) =>
       tx.session.create({ data: { id: "sx2", organizationId: ORG, userId: USER, tokenHash: "tok-hash-ok" } })
     );
-    const found = await withTenant(ORG, (tx) => tx.session.findUnique({ where: { tokenHash: "tok-hash-ok" } }));
+    const found = await withTenant(ORG, (tx) => tx.session.findFirst({ where: { tokenHash: "tok-hash-ok" } }));
     expect(found?.organizationId).toBe(ORG);
   });
 

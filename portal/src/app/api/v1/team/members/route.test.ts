@@ -55,7 +55,11 @@ function params(memberId: string) {
 }
 
 describe("team member routes", () => {
-  beforeEach(() => { vi.stubEnv("APP_MODE", "prod"); });
+  beforeEach(() => {
+    vi.stubEnv("KEYCLOAK_ISSUER", "https://keycloak.test");
+    vi.stubEnv("KEYCLOAK_CLIENT_ID", "test-client");
+    vi.stubEnv("APP_MODE", "prod");
+  });
   afterEach(() => { vi.unstubAllEnvs(); });
 
   it("GET lists members for team.view roles", async () => {
@@ -86,6 +90,16 @@ describe("team member routes", () => {
     expect((await PATCH(req("/api/v1/team/members/m1", "PATCH", { role: "superadmin" }), params("m1"))).status).toBe(400);
     setup("organization_owner", null);
     expect((await PATCH(req("/api/v1/team/members/missing", "PATCH", { role: "scan_operator" }), params("missing"))).status).toBe(404);
+  });
+
+  it("PATCH returns 409 when demoting the last owner (TeamGuardError)", async () => {
+    setup("organization_owner", {
+      id: "m1", userId: "u9", organizationId: "org_1", role: "organization_owner", status: "active",
+      createdAt: new Date(), updatedAt: new Date(), user: { email: "m@x.com" },
+    });
+    vi.mocked(prisma.organizationMembership.count).mockResolvedValue(1 as never);
+    const res = await PATCH(req("/api/v1/team/members/m1", "PATCH", { role: "report_viewer" }), params("m1"));
+    expect(res.status).toBe(409);
   });
 
   it("DELETE is 403 for asset_manager, 404 unknown, 204 for owner", async () => {

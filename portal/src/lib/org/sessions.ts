@@ -27,8 +27,10 @@ export function sessionModelAvailable(): boolean {
 }
 
 /**
- * Records (or refreshes) an authenticated access. One JWT = one session row,
- * keyed by the sha256 of the raw token. A revoked row is never un-revoked.
+ * Records (or refreshes) an authenticated access. One JWT = one session row
+ * per org, keyed by the sha256 of the raw token (composite unique on
+ * organizationId + tokenHash — the same credential yields a separate session
+ * in each org). A revoked row is never un-revoked.
  */
 export async function recordSessionAccess(
   ctx: TenantContext,
@@ -37,7 +39,7 @@ export async function recordSessionAccess(
   if (!sessionModelAvailable()) return;
   await withTenant(ctx.organizationId, (tx) =>
     tx.session.upsert({
-      where: { tokenHash: input.tokenHash },
+      where: { organizationId_tokenHash: { organizationId: ctx.organizationId, tokenHash: input.tokenHash } },
       update: { lastSeenAt: new Date(), userAgent: input.userAgent ?? null, ipHash: input.ipHash ?? null },
       create: {
         organizationId: ctx.organizationId,
@@ -86,7 +88,7 @@ export async function revokeSession(
 export async function isSessionBlocked(organizationId: string, tokenHash: string): Promise<boolean> {
   if (!sessionModelAvailable()) return false;
   return withTenant(organizationId, async (tx) => {
-    const session = await tx.session.findUnique({ where: { tokenHash } });
+    const session = await tx.session.findFirst({ where: { tokenHash } });
     return session?.revokedAt != null;
   });
 }

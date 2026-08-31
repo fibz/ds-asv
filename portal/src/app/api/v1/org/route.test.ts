@@ -39,7 +39,11 @@ function setup(role: string, orgRow?: Record<string, unknown>) {
 }
 
 describe("org profile routes", () => {
-  beforeEach(() => { vi.stubEnv("APP_MODE", "prod"); });
+  beforeEach(() => {
+    vi.stubEnv("KEYCLOAK_ISSUER", "https://keycloak.test");
+    vi.stubEnv("KEYCLOAK_CLIENT_ID", "test-client");
+    vi.stubEnv("APP_MODE", "prod");
+  });
   afterEach(() => { vi.unstubAllEnvs(); });
 
   it("GET returns the org profile for any member", async () => {
@@ -58,6 +62,12 @@ describe("org profile routes", () => {
   it("PATCH is 400 for an empty name", async () => {
     setup("organization_owner");
     const res = await PATCH(req("PATCH", { name: "  " }));
+    expect(res.status).toBe(400);
+  });
+
+  it("PATCH is 400 for a non-string name (no silent no-op)", async () => {
+    setup("organization_owner");
+    const res = await PATCH(req("PATCH", { name: 123 }));
     expect(res.status).toBe(400);
   });
 

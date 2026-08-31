@@ -198,7 +198,7 @@ model Session {
   id             String        @id @default(cuid())
   organizationId String
   userId         String
-  tokenHash      String        @unique
+  tokenHash      String
   userAgent      String?
   ipHash         String?
   lastSeenAt     DateTime      @default(now())
@@ -208,6 +208,7 @@ model Session {
   user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@unique([organizationId, tokenHash])
   @@index([organizationId, userId])
   @@index([organizationId, lastSeenAt])
 }

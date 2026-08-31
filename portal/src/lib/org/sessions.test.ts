@@ -53,10 +53,13 @@ describe("session registry service", () => {
   it("records a session and refreshes lastSeenAt on reuse (no duplicate rows)", async () => {
     const h = hashToken("tok-a");
     await recordSessionAccess(ctx, { tokenHash: h, userAgent: "ua1" });
+    const first = (await withTenant(ORG, (tx) => tx.session.findMany({ where: { tokenHash: h } })))[0];
     await new Promise((r) => setTimeout(r, 5));
     await recordSessionAccess(ctx, { tokenHash: h, userAgent: "ua1" });
     const rows = await withTenant(ORG, (tx) => tx.session.findMany({ where: { tokenHash: h } }));
     expect(rows).toHaveLength(1);
+    // The sleep above backs a real assertion: reuse refreshes lastSeenAt.
+    expect(rows[0].lastSeenAt.getTime()).toBeGreaterThan(first.lastSeenAt.getTime());
     const all = await listActiveSessions(ctx);
     expect(all.map((s) => s.tokenHash)).toContain(h);
   });
@@ -88,6 +91,22 @@ describe("session registry service", () => {
     expect(await revokeSession(ctx2, session.id)).toBeNull(); // other org, RLS hides it
     expect(await getSession(ctx, session.id)).not.toBeNull();
     expect(await getSession(ctx2, session.id)).toBeNull();
+  });
+
+  it("same tokenHash records one session per org; revoke is org-scoped", async () => {
+    const h = hashToken("tok-org");
+    await recordSessionAccess(ctx, { tokenHash: h, userAgent: "ua" });
+    await recordSessionAccess(ctx2, { tokenHash: h, userAgent: "ua" });
+    // Both orgs record the same credential without a global-unique clash.
+    expect(await withTenant(ORG, (tx) => tx.session.findMany({ where: { tokenHash: h } }))).toHaveLength(1);
+    expect(await withTenant(ORG2, (tx) => tx.session.findMany({ where: { tokenHash: h } }))).toHaveLength(1);
+    expect(await isSessionBlocked(ORG, h)).toBe(false);
+    expect(await isSessionBlocked(ORG2, h)).toBe(false);
+    // Revoking in ORG blocks there but NOT in ORG2 (per-org scoping).
+    const session = (await listActiveSessions(ctx)).find((s) => s.tokenHash === h)!;
+    await revokeSession(ctx, session.id, "org-scoped test");
+    expect(await isSessionBlocked(ORG, h)).toBe(true);
+    expect(await isSessionBlocked(ORG2, h)).toBe(false);
   });
 
   it("recordSessionAccess never un-revokes a revoked session", async () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { Client } from "pg";
 import { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
@@ -39,6 +39,13 @@ async function adminWipe(): Promise<void> {
 }
 
 describe("session enforcement in auth", () => {
+  beforeEach(() => {
+    vi.stubEnv("KEYCLOAK_ISSUER", "https://keycloak.test");
+    vi.stubEnv("KEYCLOAK_CLIENT_ID", "test-client");
+  });
+
+  afterEach(() => { vi.unstubAllEnvs(); });
+
   beforeAll(async () => {
     await adminWipe();
     await withTenant(ORG, async (tx) => {

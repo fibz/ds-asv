@@ -65,7 +65,7 @@ export function loadSpec(): OpenAPISpec {
 
   const specPath = path.join(process.cwd(), "spec", "openapi.yaml");
   const file = fs.readFileSync(specPath, "utf-8");
-  const parsed = yaml.parse(file) as {
+  const parsed = yaml.load(file) as {
     components?: {
       schemas?: Record<string, unknown>;
     };

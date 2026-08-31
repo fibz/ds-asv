@@ -8,9 +8,9 @@ info:
 
     ## Authentication
 
-    All API requests require an API key passed in the `X-API-Key` header.
-    Keys are scoped — see the `scopes` object on key creation for available
-    permissions.
+    Requests authenticate via the `X-API-Key` header for machine access and
+    Keycloak bearer tokens for user-center routes. Keys are scoped — see the
+    `scopes` object on key creation for available permissions.
 
     ## Scopes
 
@@ -658,7 +658,7 @@ paths:
       tags: [user-center]
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: status, in: query, schema: { type: string, enum: [active, invited] }, description: filter by membership status }
+        - { name: status, in: query, schema: { type: string, enum: [active, invited] }, description: "filter by membership status (default: active)" }
       responses:
         '200':
           description: Members
@@ -713,6 +713,7 @@ paths:
     get:
       operationId: listSessions
       summary: List active sessions in the organization
+      description: Sessions are scoped per organization — the same credential yields a separate session in each org, and revoking in one org does not revoke in another.
       tags: [user-center]
       security: [{ bearerAuth: [] }]
       responses:
@@ -781,21 +782,22 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email]
+              required: [email, role]
               properties:
                 email: { type: string, format: email }
                 role: { $ref: '#/components/schemas/Role' }
       responses:
         '201':
-          description: Invitation created
+          description: Invitation created — the token is single-use and shown only once.
           content:
             application/json:
               schema:
                 type: object
+                required: [token, email, role]
                 properties:
-                  id: { type: string }
-                  email: { type: string }
-                  expiresAt: { type: [string, 'null'] }
+                  token: { type: string }
+                  email: { type: string, format: email }
+                  role: { $ref: '#/components/schemas/Role' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
 

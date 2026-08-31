@@ -84,8 +84,13 @@ describe("team service", () => {
 
   it("is tenant-scoped: other org cannot see or mutate our members", async () => {
     // R10 (plan-bug ruling): re-seed MEMBER's membership — the previous test
-    // removed it, and this test must be order-independent.
-    await withTenant(ORG, (tx) => tx.organizationMembership.create({ data: { userId: MEMBER, organizationId: ORG, role: "report_viewer" } }));
+    // removed it, and this test must be order-independent. Upsert keyed on the
+    // composite unique so it is safe under any shuffle order.
+    await withTenant(ORG, (tx) => tx.organizationMembership.upsert({
+      where: { userId_organizationId: { userId: MEMBER, organizationId: ORG } },
+      update: { role: "report_viewer" },
+      create: { userId: MEMBER, organizationId: ORG, role: "report_viewer" },
+    }));
     const foreign: TenantContext = { userId: OWNER, organizationId: ORG2, role: "organization_owner", isStaff: false, appMode: "prod" };
     const ours = (await listTeamMembers(ownerCtx)).find((m) => m.userId === MEMBER)!;
     expect(await updateMemberRole(foreign, ours.id, "scan_operator")).toBeNull();
