@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { createHmac } from "node:crypto";
 import { Client } from "pg";
 import { prisma } from "@/lib/prisma-client";
 import { setRlsContext } from "@/lib/tenant";
@@ -9,6 +10,15 @@ import type { Prisma } from "@/lib/generated/prisma";
 
 const ORG = "org_manifest_0001";
 const USER = "user_manifest_0001";
+
+// Mirrors manifest.ts: the HMAC secret fallback and canonical() sorted-key JSON
+// serialization, used to build a VALIDLY SIGNED manifest with an expired timestamp.
+const DEV_SECRET = process.env.MANIFEST_SECRET || "dev-manifest-secret";
+function reSign(payload: Record<string, unknown>): string {
+  return createHmac("sha256", DEV_SECRET)
+    .update(JSON.stringify(payload, Object.keys(payload).sort()))
+    .digest("hex");
+}
 
 function withTenant<T>(organizationId: string, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
   return prisma.$transaction(async (tx) => { await setRlsContext(organizationId, tx); return fn(tx); });
@@ -48,14 +58,23 @@ describe("scan manifest", () => {
     expect(verified?.targets.map((t) => t.canonicalIdentifier)).toEqual(["10.1.1.1"]);
   });
 
-  it("rejects tampered and expired manifests", async () => {
+  it("rejects tampered and garbage manifests", async () => {
     const { manifest } = await issueScanManifest(ctx, scanId);
     const [payload, sig] = manifest.split(".");
     const tampered = `${Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(payload, "base64url").toString()), targets: [] })).toString("base64url")}.${sig}`;
     expect(await verifyScanManifest(tampered)).toBeNull();
-    const expired = `${payload}.${Buffer.from("f".repeat(64), "hex").toString("base64url")}`;
-    expect(await verifyScanManifest(expired)).toBeNull();
     expect(await verifyScanManifest("garbage")).toBeNull();
+  });
+
+  it("rejects an expired manifest that is still VALIDLY signed", async () => {
+    const { manifest } = await issueScanManifest(ctx, scanId);
+    const [payloadB64] = manifest.split(".");
+    const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString()) as Record<string, unknown>;
+    payload.expiresAt = new Date(Date.now() - 1000).toISOString();
+    // Valid signature over the mutated payload (expiry moved to the past) so the
+    // rejection must come from the expiry branch, not the signature check.
+    const expiredValid = `${Buffer.from(JSON.stringify(payload)).toString("base64url")}.${reSign(payload)}`;
+    expect(await verifyScanManifest(expiredValid)).toBeNull();
   });
 
   it("simulatedScanner returns canned findings per target", async () => {
