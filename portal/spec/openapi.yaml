@@ -53,6 +53,8 @@ tags:
     description: Framework assessment and control tracking
   - name: Payments
     description: Payment engine compliance (preview)
+  - name: user-center
+    description: User center — org profile, team members, sessions, audit trail
 
 paths:
   /auth/api-keys:
@@ -617,6 +619,185 @@ paths:
           description: Webhook registered
         '400':
           $ref: '#/components/responses/BadRequest'
+  /org:
+    get:
+      operationId: getOrgProfile
+      summary: Current organization profile (derived from identity)
+      tags: [user-center]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Org profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrgProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      operationId: updateOrgProfile
+      summary: Update organization profile (owner only)
+      tags: [user-center]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrgProfileUpdate' }
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrgProfile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /team/members:
+    get:
+      operationId: listTeamMembers
+      summary: List organization members with roles
+      tags: [user-center]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, invited] }, description: filter by membership status }
+      responses:
+        '200':
+          description: Members
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items: { $ref: '#/components/schemas/Member' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /team/members/{memberId}:
+    patch:
+      operationId: updateMemberRole
+      summary: Change a member's role (owner/security admin)
+      tags: [user-center]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: memberId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { $ref: '#/components/schemas/Role' }
+      responses:
+        '200':
+          description: Updated member
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: removeTeamMember
+      summary: Remove a member (revokes their sessions)
+      tags: [user-center]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: memberId, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Member removed }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /sessions:
+    get:
+      operationId: listSessions
+      summary: List active sessions in the organization
+      tags: [user-center]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items: { $ref: '#/components/schemas/Session' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /sessions/{sessionId}/revoke:
+    post:
+      operationId: revokeSession
+      summary: Revoke a session (own session, or any session for owner/security admin)
+      tags: [user-center]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Session revoked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /audit:
+    get:
+      operationId: listAuditEvents
+      summary: Organization audit trail (owner/security admin)
+      tags: [user-center]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: action, in: query, schema: { type: string } }
+        - { name: resourceType, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEvent' }
+                  nextCursor: { type: [string, 'null'] }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /invitations:
+    post:
+      operationId: createInvitation
+      summary: Invite a member (owner/security admin)
+      tags: [user-center]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                role: { $ref: '#/components/schemas/Role' }
+      responses:
+        '201':
+          description: Invitation created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  email: { type: string }
+                  expiresAt: { type: [string, 'null'] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
 components:
   securitySchemes:
@@ -624,6 +805,9 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
+    bearerAuth:
+      type: http
+      scheme: bearer
 
   parameters:
     keyId:
@@ -697,15 +881,91 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
 
   schemas:
     Error:
       type: object
+      required: [error]
       properties:
         error:
           type: string
         message:
           type: string
+
+    Role:
+      type: string
+      enum: [organization_owner, security_admin, asset_manager, scan_operator, report_viewer, billing_admin]
+
+    ContactInput:
+      type: object
+      required: [type, name, email]
+      properties:
+        id: { type: string, description: set to update an existing contact }
+        type: { type: string, enum: [business, security, billing, emergency] }
+        name: { type: string }
+        email: { type: string, format: email }
+        phone: { type: [string, 'null'] }
+        escalationOrder: { type: integer, default: 1 }
+
+    OrgProfile:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        parentOrgId: { type: [string, 'null'] }
+        parentName: { type: [string, 'null'] }
+        contacts:
+          type: array
+          items: { $ref: '#/components/schemas/ContactInput' }
+
+    OrgProfileUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        contacts:
+          type: array
+          items: { $ref: '#/components/schemas/ContactInput' }
+
+    Member:
+      type: object
+      required: [id, userId, email, role, status]
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        email: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        status: { type: string, enum: [active, invited] }
+        joinedAt: { type: [string, 'null'] }
+
+    Session:
+      type: object
+      required: [id, userId, lastSeenAt, createdAt]
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        userAgent: { type: [string, 'null'] }
+        lastSeenAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        revokedAt: { type: [string, 'null'] }
+
+    AuditEvent:
+      type: object
+      required: [id, action, resourceType, createdAt]
+      properties:
+        id: { type: string }
+        action: { type: string }
+        resourceType: { type: string }
+        resourceId: { type: [string, 'null'] }
+        actorUserId: { type: [string, 'null'] }
+        reason: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
 
     ScanType:
       type: string
