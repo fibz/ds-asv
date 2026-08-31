@@ -1,5 +1,10 @@
 import { prisma } from "@/lib/prisma-client";
 import { provisionKeycloakUser } from "@/lib/auth/keycloak";
+import {
+  sessionMetaFromRequest,
+  isSessionBlocked,
+  recordSessionAccess,
+} from "@/lib/org/sessions";
 import type { Prisma, Organization } from "@/lib/generated/prisma";
 
 export type Role =
@@ -90,11 +95,25 @@ export async function tenantContextFromRequest(request: {
   if (!keycloakUser) return null;
   const user = await prisma.user.findUnique({ where: { idpId: keycloakUser.idpId } });
   if (!user) return null;
+  let ctx: TenantContext | null = null;
   try {
-    return await resolveTenantContext(user.id);
+    ctx = await resolveTenantContext(user.id);
   } catch {
     return null;
   }
+  // Session registry (user center): a revoked token is rejected; a valid
+  // token is recorded. Registry unavailability never breaks auth (availability
+  // over registry) — but when reachable, a revoked row is authoritative.
+  try {
+    const meta = sessionMetaFromRequest(request);
+    if (meta) {
+      if (await isSessionBlocked(ctx.organizationId, meta.tokenHash)) return null;
+      await recordSessionAccess(ctx, meta);
+    }
+  } catch (err) {
+    console.error("session registry error (auth continues):", err);
+  }
+  return ctx;
 }
 
 /**
