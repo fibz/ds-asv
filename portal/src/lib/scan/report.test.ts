@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { Client } from "pg";
 import { prisma } from "@/lib/prisma-client";
 import { setRlsContext } from "@/lib/tenant";
 import { createScanFromAssets, transitionScanStatus } from "@/lib/scan/service";
 import { ingestFindings } from "@/lib/scan/findings";
 import { buildReport, getReport, ReportGuardError } from "@/lib/scan/report";
+import { submitReport, attestReport, isReportFinal } from "@/lib/scan/report";
 import type { TenantContext } from "@/lib/tenant";
 import type { Prisma } from "@/lib/generated/prisma";
 
@@ -70,5 +71,43 @@ describe("report generation", () => {
     expect(await getReport(other, report.id)).toBeNull();
     const audits = await withTenant(ORG, (tx) => tx.auditEvent.findMany({ where: { action: "report.generated", resourceId: report.id } }));
     expect(audits.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("QA attestation gate", () => {
+  let scanId = "";
+  beforeAll(async () => {
+    vi.stubEnv("APP_MODE", "prod");
+    await adminWipe();
+    await withTenant(ORG, (tx) => tx.organization.create({ data: { id: ORG, name: "Report Org" } }));
+    await withTenant(ORG, (tx) => tx.user.create({ data: { id: USER, idpId: "kc-report", email: "r@x.com" } }));
+    assetId = (await withTenant(ORG, (tx) => tx.asset.create({ data: { id: "asset_report_1", organizationId: ORG, type: "ipv4", canonicalIdentifier: "10.3.3.3", lifecycleState: "active", verificationState: "verified" } }))).id;
+    scanId = (await createScanFromAssets({ ...ctx, role: "scan_operator" }, { name: "report scan", assetIds: [assetId] })).id;
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, scanId, "RUNNING");
+    await ingestFindings({ ...ctx, role: "scan_operator" }, scanId, [
+      { assetId, qid: "q1", severity: "4", pciSeverity: "High", title: "TLS weak" },
+      { assetId, qid: "q2", severity: "2", pciSeverity: "Low", title: "Banner" },
+    ]);
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, scanId, "COMPLETED");
+  });
+  afterAll(async () => { vi.unstubAllEnvs(); await adminWipe(); await prisma.$disconnect(); });
+
+  it("report is not final until attested; prod requires staff for attest", async () => {
+    const report = await buildReport(ctx, scanId);
+    expect(isReportFinal(report)).toBe(false);
+    const submitted = await submitReport(ctx, report.id);
+    expect(submitted?.status).toBe("submitted");
+    // report_viewer (non-staff) in prod cannot attest
+    await expect(attestReport(ctx, report.id)).rejects.toThrow(/attest/);
+    const staff: TenantContext = { ...ctx, isStaff: true };
+    const attested = await attestReport(staff, report.id);
+    expect(attested?.status).toBe("attested");
+    expect(isReportFinal(attested!)).toBe(true);
+  });
+
+  it("attestation transitions are guarded (draft → attested rejected)", async () => {
+    const fresh = await buildReport(ctx, scanId);
+    const staff: TenantContext = { ...ctx, isStaff: true };
+    await expect(attestReport(staff, fresh.id)).rejects.toThrow(/submitted/);
   });
 });

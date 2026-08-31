@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma-client";
-import { setRlsContext } from "@/lib/tenant";
+import { setRlsContext, getAppMode } from "@/lib/tenant";
 import { recordAudit } from "@/lib/audit";
 import { listFindings } from "@/lib/scan/findings";
 import type { TenantContext } from "@/lib/tenant";
@@ -50,4 +50,42 @@ export async function getReport(ctx: TenantContext, reportId: string): Promise<(
   return withTenant(ctx.organizationId, (tx) =>
     tx.report.findUnique({ where: { id: reportId }, include: { attestation: true } })
   );
+}
+
+export async function submitReport(ctx: TenantContext, reportId: string): Promise<Report | null> {
+  return withTenant(ctx.organizationId, async (tx) => {
+    const report = await tx.report.findUnique({ where: { id: reportId } });
+    if (!report) return null;
+    if (report.status !== "draft") throw new ReportGuardError("only draft reports can be submitted");
+    const attestation = await tx.reportAttestation.create({
+      data: { reportId, organizationId: ctx.organizationId, status: "submitted", reviewedById: ctx.userId },
+    });
+    const updated = await tx.report.update({ where: { id: reportId }, data: { status: "submitted", attestationId: attestation.id } });
+    await recordAudit(ctx, "report.submitted", "Report", reportId, { status: report.status }, { status: "submitted" }, undefined, tx);
+    return updated;
+  });
+}
+
+export async function attestReport(
+  ctx: TenantContext,
+  reportId: string,
+  opts?: { reason?: string }
+): Promise<Report | null> {
+  return withTenant(ctx.organizationId, async (tx) => {
+    const report = await tx.report.findUnique({ where: { id: reportId }, include: { attestation: true } });
+    if (!report) return null;
+    if (report.status !== "submitted") throw new ReportGuardError("only submitted reports can be attested");
+    if (getAppMode() === "prod" && !ctx.isStaff) throw new ReportGuardError("attestation requires a staff reviewer in prod");
+    await tx.reportAttestation.update({
+      where: { id: report.attestation!.id },
+      data: { status: "attested", reason: opts?.reason ?? null, reviewedAt: new Date() },
+    });
+    const updated = await tx.report.update({ where: { id: reportId }, data: { status: "attested" } });
+    await recordAudit(ctx, "report.attested", "Report", reportId, { status: report.status }, { status: "attested" }, opts?.reason, tx);
+    return updated;
+  });
+}
+
+export function isReportFinal(report: { status: string }): boolean {
+  return report.status === "attested";
 }
