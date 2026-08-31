@@ -45,3 +45,33 @@ describe("user center API contract", () => {
     }
   });
 });
+
+describe("phase 3 scan contract", () => {
+  const spec = loadSpec();
+  const paths = spec.paths ?? {};
+
+  it("documents scan lifecycle", () => {
+    expect(paths["/scans"].post).toBeDefined();
+    expect(paths["/scans"].get).toBeDefined();
+    expect(paths["/scans/{scanId}"].get).toBeDefined();
+    expect(paths["/scans/{scanId}"].patch).toBeDefined();
+  });
+
+  it("documents findings ingestion and reports", () => {
+    expect(paths["/scans/{scanId}/findings"].post).toBeDefined();
+    expect(paths["/scans/{scanId}/findings"].get).toBeDefined();
+    expect(paths["/reports/{reportId}"].get).toBeDefined();
+    expect(paths["/reports/{reportId}/attest"].post).toBeDefined();
+  });
+
+  it("no longer documents the legacy stopScan delete", () => {
+    expect(paths["/scans/{scanId}"].delete).toBeUndefined();
+  });
+
+  it("defines scan-domain schemas", () => {
+    const schemas = spec.components?.schemas ?? {};
+    for (const name of ["Scan", "ScanTarget", "Finding", "Report", "ReportAttestation", "ScanCreate"]) {
+      expect(schemas[name], `missing schema ${name}`).toBeDefined();
+    }
+  });
+});
