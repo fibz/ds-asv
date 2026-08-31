@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma-client";
 import { setRlsContext, getAppMode } from "@/lib/tenant";
 import { recordAudit } from "@/lib/audit";
 import type { TenantContext } from "@/lib/tenant";
-import type { Prisma, Scan } from "@/lib/generated/prisma";
+import type { Prisma, Scan, ScanTarget } from "@/lib/generated/prisma";
 
 export class ScanGuardError extends Error {}
 
@@ -49,13 +49,13 @@ export async function createScanFromAssets(
   });
 }
 
-export async function listScans(ctx: TenantContext): Promise<(Scan & { targets: unknown[] })[]> {
+export async function listScans(ctx: TenantContext): Promise<(Scan & { targets: ScanTarget[] })[]> {
   return withTenant(ctx.organizationId, (tx) =>
     tx.scan.findMany({ where: { organizationId: ctx.organizationId }, orderBy: { createdAt: "desc" }, include: { targets: true } })
   );
 }
 
-export async function getScan(ctx: TenantContext, scanId: string): Promise<(Scan & { targets: unknown[]; _count: { findings: number } }) | null> {
+export async function getScan(ctx: TenantContext, scanId: string): Promise<(Scan & { targets: ScanTarget[]; _count: { findings: number } }) | null> {
   return withTenant(ctx.organizationId, (tx) =>
     tx.scan.findUnique({ where: { id: scanId }, include: { targets: true, _count: { select: { findings: true } } } })
   );

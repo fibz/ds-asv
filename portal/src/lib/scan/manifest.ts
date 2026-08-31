@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/prisma-client";
-import { setRlsContext } from "@/lib/tenant";
+import { setRlsContext, getAppMode } from "@/lib/tenant";
 import { getScan } from "@/lib/scan/service";
 import type { TenantContext } from "@/lib/tenant";
 import type { Prisma } from "@/lib/generated/prisma";
@@ -8,15 +8,38 @@ import type { Prisma } from "@/lib/generated/prisma";
 export const MANIFEST_TTL_MS = 15 * 60 * 1000;
 
 function manifestSecret(): string {
-  return process.env.MANIFEST_SECRET || "dev-manifest-secret";
+  const secret = process.env.MANIFEST_SECRET;
+  if (secret) return secret;
+  // Fail closed in prod: a missing secret would otherwise fall back to the
+  // well-known dev secret, letting anyone forge validly-signed manifests.
+  if (getAppMode() === "prod") throw new Error("MANIFEST_SECRET is required when APP_MODE=prod");
+  return "dev-manifest-secret";
 }
 
 function b64url(input: Buffer | string): string {
   return Buffer.from(input).toString("base64url");
 }
 
+/**
+ * Recursively sorts object keys at every level, including inside arrays, so the
+ * HMAC covers the full nested payload (e.g. each target's canonicalIdentifier)
+ * rather than collapsing nested objects to `{}`. This keeps the canonical form
+ * deterministic AND tamper-evident.
+ */
+function sortKeysDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeysDeep);
+  if (value !== null && typeof value === "object") {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) {
+      sorted[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
+    }
+    return sorted;
+  }
+  return value;
+}
+
 function canonical(payload: Record<string, unknown>): string {
-  return JSON.stringify(payload, Object.keys(payload).sort());
+  return JSON.stringify(sortKeysDeep(payload));
 }
 
 function sign(payload: Record<string, unknown>): string {

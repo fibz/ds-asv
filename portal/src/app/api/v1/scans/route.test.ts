@@ -47,7 +47,7 @@ function setup(role: string, scan?: Record<string, unknown> | null) {
   // R-scan-update (plan-bug ruling, test-only): Prisma update takes a single
   // `{ where, data }` arg (see team/members route.test.ts R12), so the service's
   // update-result read must merge from args.data.
-  vi.mocked(prisma.scan.update).mockImplementation(((args) =>
+  vi.mocked(prisma.scan.update).mockImplementation(((args: { data?: object }) =>
     Promise.resolve({ ...(row as object), ...((args as { data?: object }).data ?? {}) } as never)) as never);
   vi.mocked(prisma.scanTarget.findMany).mockResolvedValue([] as never);
   vi.mocked(prisma.asset.findMany).mockResolvedValue([{ id: "a1", organizationId: "org_1", type: "ipv4", canonicalIdentifier: "10.0.0.1", lifecycleState: "active", verificationState: "verified" }] as never);

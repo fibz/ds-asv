@@ -11,12 +11,25 @@ import type { Prisma } from "@/lib/generated/prisma";
 const ORG = "org_manifest_0001";
 const USER = "user_manifest_0001";
 
-// Mirrors manifest.ts: the HMAC secret fallback and canonical() sorted-key JSON
-// serialization, used to build a VALIDLY SIGNED manifest with an expired timestamp.
+// Mirrors manifest.ts: the HMAC secret fallback and the deep canonical()
+// serialization (recursively sorted keys at every level, including inside
+// arrays), used to build a VALIDLY SIGNED manifest with an expired timestamp
+// and to prove that tampering with a nested target is detected.
 const DEV_SECRET = process.env.MANIFEST_SECRET || "dev-manifest-secret";
+function sortKeysDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeysDeep);
+  if (value !== null && typeof value === "object") {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) {
+      sorted[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
+    }
+    return sorted;
+  }
+  return value;
+}
 function reSign(payload: Record<string, unknown>): string {
   return createHmac("sha256", DEV_SECRET)
-    .update(JSON.stringify(payload, Object.keys(payload).sort()))
+    .update(JSON.stringify(sortKeysDeep(payload)))
     .digest("hex");
 }
 
@@ -75,6 +88,22 @@ describe("scan manifest", () => {
     // rejection must come from the expiry branch, not the signature check.
     const expiredValid = `${Buffer.from(JSON.stringify(payload)).toString("base64url")}.${reSign(payload)}`;
     expect(await verifyScanManifest(expiredValid)).toBeNull();
+  });
+
+  it("rejects a manifest whose nested target canonicalIdentifier was tampered with", async () => {
+    const { manifest } = await issueScanManifest(ctx, scanId);
+    const [payloadB64, sig] = manifest.split(".");
+    const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString()) as Record<string, unknown>;
+    // Same array length, but a different canonicalIdentifier inside targets[0].
+    // The original (unchanged) signature is carried over — this is exactly the
+    // attack the old top-level-only canonical() allowed: it collapsed targets[]
+    // to `{}`, so the original signature validated ANY target value. With deep
+    // canonicalization the nested field is inside the HMAC, so verification
+    // must now reject the tampered payload.
+    const targets = payload.targets as { type: string; canonicalIdentifier: string }[];
+    targets[0] = { type: targets[0].type, canonicalIdentifier: "10.2.2.2" };
+    const tampered = `${Buffer.from(JSON.stringify(payload)).toString("base64url")}.${sig}`;
+    expect(await verifyScanManifest(tampered)).toBeNull();
   });
 
   it("simulatedScanner returns canned findings per target", async () => {
