@@ -45,8 +45,8 @@ describe("phase 3 exit criteria", () => {
   beforeAll(async () => {
     await adminWipe();
     for (const o of [ORG_A, ORG_B]) await withTenant(o, (tx) => tx.organization.create({ data: { id: o, name: `Exit ${o}` } }));
-    await withTenant(ORG_A, (tx) => tx.user.create({ data: { id: USER_A, idpId: "kc-exit-a", email: "a@x.com" } }));
-    await withTenant(ORG_B, (tx) => tx.user.create({ data: { id: USER_B, idpId: "kc-exit-b", email: "b@x.com" } }));
+    await withTenant(ORG_A, (tx) => tx.user.create({ data: { id: USER_A, idpId: "kc-scan-exit-a", email: "a@x.com" } }));
+    await withTenant(ORG_B, (tx) => tx.user.create({ data: { id: USER_B, idpId: "kc-scan-exit-b", email: "b@x.com" } }));
     assetA = (await withTenant(ORG_A, (tx) => tx.asset.create({ data: { id: "asset_exit_a_1", organizationId: ORG_A, type: "ipv4", canonicalIdentifier: "10.9.9.9", lifecycleState: "active", verificationState: "verified" } }))).id;
   });
   afterAll(async () => { await adminWipe(); await prisma.$disconnect(); });

@@ -163,6 +163,28 @@ def test_deep_canonical_json_covers_nested_targets():
     assert manifest.deep_canonical_json(a) != manifest.deep_canonical_json(b)
 
 
+def test_canonical_form_matches_portal_ts():
+    # Cross-check (Ruling R5): the Python canonical form must be byte-identical
+    # to the portal's TypeScript canonical() — JSON.stringify(sortKeysDeep(p)),
+    # which is COMPACT (no spaces) with recursively-sorted keys. This locks in
+    # the real portal→scanner manifest handoff.
+    p = {
+        "scanId": "scan_1",
+        "organizationId": "org_1",
+        "targets": [{"type": "ipv4", "canonicalIdentifier": "10.1.1.1"}],
+        "issuedAt": "2026-08-31T00:00:00Z",
+        "expiresAt": "2026-08-31T00:15:00Z",
+        "nonce": "abc123",
+    }
+    # Node JSON.stringify output for this recursively-sorted payload:
+    expected = (
+        '{"expiresAt":"2026-08-31T00:15:00Z","issuedAt":"2026-08-31T00:00:00Z",'
+        '"nonce":"abc123","organizationId":"org_1","scanId":"scan_1",'
+        '"targets":[{"canonicalIdentifier":"10.1.1.1","type":"ipv4"}]}'
+    )
+    assert manifest.deep_canonical_json(p) == expected
+
+
 def test_manifest_secret_fail_closed_in_prod(monkeypatch):
     monkeypatch.setenv("APP_MODE", "prod")
     monkeypatch.delenv("MANIFEST_SECRET", raising=False)
