@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { TeamGuardError } from "@/lib/org/team";
+import { ScanGuardError } from "@/lib/scan/service";
 
 /**
  * Maps an unexpected route/service error to a response following the
@@ -12,6 +13,9 @@ export function routeErrorResponse(
   opts: { notFound?: string } = {}
 ): NextResponse {
   if (err instanceof TeamGuardError) {
+    return NextResponse.json({ error: err.message }, { status: 409 });
+  }
+  if (err instanceof ScanGuardError) {
     return NextResponse.json({ error: err.message }, { status: 409 });
   }
   if (opts.notFound && err instanceof Error && err.message === opts.notFound) {

@@ -65,4 +65,12 @@ describe("user center actions", () => {
     expect(can(sec, "audit.view")).toBe(true);
     expect(can(mgr, "audit.view")).toBe(false);
   });
+
+  it("scan.view is allowed for scan_operator and asset_manager, not report_viewer", () => {
+    const op: TenantContext = { userId: "u5", organizationId: "o1", role: "scan_operator", isStaff: false, appMode: "prod" };
+    const mgrView: TenantContext = { userId: "u3", organizationId: "o1", role: "asset_manager", isStaff: false, appMode: "prod" };
+    expect(can(op, "scan.view")).toBe(true);
+    expect(can(mgrView, "scan.view")).toBe(true);
+    expect(can(viewer, "scan.view")).toBe(false);
+  });
 });
