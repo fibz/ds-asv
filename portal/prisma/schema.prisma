@@ -29,6 +29,10 @@ model Organization {
   assetVerifications AssetVerification[]
   assetImports      AssetImport[]
   sessions          Session[]
+  targets           ScanTarget[]
+  findings          Finding[]
+  reports           Report[]
+  reportAttestations ReportAttestation[]
 }
 
 model Compliance {
@@ -47,18 +51,97 @@ model Compliance {
 }
 
 model Scan {
-  id            String        @id @default(cuid())
-  orgId         String
-  type          String        // ASV, VULNERABILITY, COMPLIANCE
-  status        String        @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED
-  target        String        // Target IP/URL
-  results       Json?
-  startedAt     DateTime      @default(now())
-  completedAt   DateTime?
-  organization  Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id                String        @id @default(cuid())
+  organizationId    String
+  name              String
+  status            String        @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED
+  requestedById     String
+  manifestIssuedAt  DateTime?
+  manifestExpiresAt DateTime?
+  startedAt         DateTime      @default(now())
+  completedAt       DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  organization      Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  targets           ScanTarget[]
+  findings          Finding[]
+  report            Report?
 
-  @@index([orgId])
-  @@index([status])
+  @@index([organizationId])
+  @@index([organizationId, status])
+}
+
+model ScanTarget {
+  id                 String   @id @default(cuid())
+  scanId             String
+  assetId            String
+  organizationId     String
+  type               String   // ipv4 | ipv6 | cidr | fqdn
+  canonicalIdentifier String
+  status             String   @default("pending") // pending, clean, failed
+  createdAt          DateTime @default(now())
+  scan               Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
+  @@index([organizationId])
+}
+
+model Finding {
+  id             String   @id @default(cuid())
+  scanId         String
+  assetId        String
+  organizationId String
+  qid            String
+  cveId          String?
+  severity       String   // 1-5
+  pciSeverity    String?  // High | Medium | Low
+  title          String
+  description    String?
+  threat         String?
+  impact         String?
+  result         String?
+  status         String   @default("open") // open, mitigated, accepted
+  createdAt      DateTime @default(now())
+  scan           Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([scanId, assetId, qid])
+  @@index([organizationId])
+  @@index([scanId, status])
+}
+
+model Report {
+  id             String            @id @default(cuid())
+  scanId         String
+  organizationId String
+  status         String            @default("draft") // draft, submitted, attested
+  summary        Json
+  attestationId  String?           @unique
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  scan           Scan              @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  attestation    ReportAttestation? @relation("ReportAttestation")
+
+  @@unique([scanId])
+  @@index([organizationId])
+}
+
+model ReportAttestation {
+  id             String   @id @default(cuid())
+  reportId       String   @unique
+  organizationId String
+  status         String   @default("draft") // draft, submitted, attested
+  reviewedById   String
+  reason         String?
+  reviewedAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+  report         Report   @relation("ReportAttestation", fields: [reportId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([organizationId])
 }
 
 model WafConfig {
