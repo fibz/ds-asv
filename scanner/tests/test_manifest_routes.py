@@ -1,13 +1,16 @@
 """Tests for the inbound dispatch route."""
+
 from fastapi.testclient import TestClient
+
 from app.api.main import create_app
 
 
 def test_manifest_route_accepts_valid():
-    from unittest.mock import patch
-    from app import manifest
     import hmac
     import json
+    from unittest.mock import patch
+
+    from app import manifest
 
     payload = {
         "scanId": "scan_1",
@@ -21,7 +24,10 @@ def test_manifest_route_accepts_valid():
     sig = hmac.new(b"dev-manifest-secret", body.encode(), "sha256").hexdigest()
     token = f"{manifest._b64url(json.dumps(payload))}.{sig}"
 
-    with patch("app.api.manifest_routes.execute_manifest", return_value={"status": "COMPLETED", "findings": 0}):
+    with patch(
+        "app.api.manifest_routes.execute_manifest",
+        return_value={"status": "COMPLETED", "findings": 0},
+    ):
         client = TestClient(create_app())
         resp = client.post("/v1/manifests", json={"manifest": token})
     assert resp.status_code == 202

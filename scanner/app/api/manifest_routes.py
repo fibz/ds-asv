@@ -1,4 +1,5 @@
 """Inbound dispatch: receive a manifest and run it as a scan job."""
+
 import logging
 
 from fastapi import APIRouter, HTTPException

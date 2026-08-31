@@ -1,4 +1,5 @@
 """Tests for app.manifest — verify a Phase 3 scan-job manifest."""
+
 import datetime as _dt
 import hmac
 import json
@@ -43,9 +44,7 @@ def test_verify_accepts_valid_manifest():
     assert verified is not None
     assert verified["scanId"] == "scan_1"
     assert verified["organizationId"] == "org_1"
-    assert verified["targets"] == [
-        {"type": "ipv4", "canonicalIdentifier": "10.1.1.1"}
-    ]
+    assert verified["targets"] == [{"type": "ipv4", "canonicalIdentifier": "10.1.1.1"}]
 
 
 def test_verify_rejects_tampered_target_content():

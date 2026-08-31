@@ -2,9 +2,7 @@
 
 import hmac
 import json
-import sys
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import pytest
 
@@ -43,8 +41,6 @@ class FakeScanner:
 
 
 def test_execute_manifest_success():
-    from app import portal_client as pc_mod
-
     events = []
     import httpx
 

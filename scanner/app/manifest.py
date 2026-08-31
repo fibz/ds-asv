@@ -38,6 +38,7 @@ def _b64decode(data: str) -> str:
 
 def deep_canonical_json(payload: dict) -> str:
     """Serialize with object keys recursively sorted, arrays preserved."""
+
     def _sort(value: Any) -> Any:
         if isinstance(value, dict):
             return {k: _sort(value[k]) for k in sorted(value)}
@@ -79,7 +80,10 @@ def verify_scan_manifest(token: str) -> Optional[dict]:
             expiry = datetime.datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
         except ValueError:
             return None
-        if expiry.timestamp() <= datetime.datetime.now(datetime.timezone.utc).timestamp():
+        if (
+            expiry.timestamp()
+            <= datetime.datetime.now(datetime.timezone.utc).timestamp()
+        ):
             return None
         for field in ("scanId", "organizationId"):
             if not isinstance(payload.get(field), str):

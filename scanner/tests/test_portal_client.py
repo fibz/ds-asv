@@ -1,4 +1,5 @@
 """Tests for app.portal_client — httpx calls to the portal."""
+
 import httpx
 import pytest
 

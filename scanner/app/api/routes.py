@@ -5,17 +5,24 @@ import json
 import logging
 from typing import List
 
-from fastapi import (APIRouter, BackgroundTasks, Depends, HTTPException,
-                     Response)
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, verify_bearer_token
-from app.api.schemas import (CustomerCreate, CustomerOnboarding,
-                             CustomerResponse, FindingResponse,
-                             PortServiceEvidence, ScanDetailResponse,
-                             ScanHistoryItem, ScanRequest, ScanResponse,
-                             ScanStatusResponse, ScanTargetDetail)
+from app.api.schemas import (
+    CustomerCreate,
+    CustomerOnboarding,
+    CustomerResponse,
+    FindingResponse,
+    PortServiceEvidence,
+    ScanDetailResponse,
+    ScanHistoryItem,
+    ScanRequest,
+    ScanResponse,
+    ScanStatusResponse,
+    ScanTargetDetail,
+)
 from app.models.customer import Customer
 from app.models.finding import Finding
 from app.models.scan import Scan, ScanStatus
@@ -24,8 +31,11 @@ from app.models.target import Target, TargetStatus
 from app.reports.sar import generate_sar
 from app.scoring.engine import ASVScoringEngine
 from app.tasks.celery_app import dispatch_scan
-from app.tasks.scanner_tasks import (run_blackbox_scan, run_ssh_auth_scan,
-                                     run_winrm_auth_scan)
+from app.tasks.scanner_tasks import (
+    run_blackbox_scan,
+    run_ssh_auth_scan,
+    run_winrm_auth_scan,
+)
 
 logger = logging.getLogger("asv.api")
 router = APIRouter(prefix="/v1")

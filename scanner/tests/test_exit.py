@@ -1,11 +1,11 @@
 """Phase 3b exit criteria — scanner consumes the Phase 3 manifest contract."""
+
 import hmac
 import json
 
 import httpx
 
 from app import manifest
-from app.executor import execute_manifest
 from app.finding_mapping import map_finding
 from app.scoring.types import ScoredFinding
 
@@ -48,12 +48,22 @@ def test_executor_reports_to_portal_via_mock():
 
         def run(self):
             from types import SimpleNamespace
-            return SimpleNamespace(status="COMPLETED", target=self.target, available=True,
-                                   banners=[{"service": "https", "port": 443}], raw={})
+
+            return SimpleNamespace(
+                status="COMPLETED",
+                target=self.target,
+                available=True,
+                banners=[{"service": "https", "port": 443}],
+                raw={},
+            )
 
     class FakeEngine:
         def score_unauthenticated(self, banners, service):
-            return [ScoredFinding(title="X", severity="medium", source="unauthenticated_probe")]
+            return [
+                ScoredFinding(
+                    title="X", severity="medium", source="unauthenticated_probe"
+                )
+            ]
 
     def handler(request: httpx.Request) -> httpx.Response:
         events.append((request.method, request.url.path))
@@ -61,8 +71,13 @@ def test_executor_reports_to_portal_via_mock():
             return httpx.Response(201, json={"count": 1})
         return httpx.Response(200, json={})
 
-    client = PortalClient(base_url="http://p.test", client=httpx.Client(transport=httpx.MockTransport(handler)))
-    result = execute_manifest(_token(), scanner_factory=FakeScanner, client=client, engine=FakeEngine())
+    client = PortalClient(
+        base_url="http://p.test",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    result = execute_manifest(
+        _token(), scanner_factory=FakeScanner, client=client, engine=FakeEngine()
+    )
     assert result["status"] == "COMPLETED"
     assert result["findings"] == 1
     paths = [p for (_, p) in events]

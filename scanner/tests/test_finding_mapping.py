@@ -1,4 +1,5 @@
 """Tests for app.finding_mapping — ScoredFinding → portal FindingIngest."""
+
 from app.finding_mapping import (
     derive_qid,
     map_finding,

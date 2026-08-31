@@ -15,7 +15,8 @@ def _get_engine():
     global _engine
     if _engine is None:
         db_url = os.environ.get(
-            "DATABASE_URL", "postgresql+psycopg2://asv:CHANGE_ME@localhost:5432/asv_scanner"
+            "DATABASE_URL",
+            "postgresql+psycopg2://asv:CHANGE_ME@localhost:5432/asv_scanner",
         )
         _engine = create_engine(db_url, pool_pre_ping=True)
     return _engine

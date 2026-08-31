@@ -45,9 +45,7 @@ class PortalClient:
         data = resp.json()
         return int(data.get("count", 0))
 
-    def patch_scan_status(
-        self, manifest_token: str, scan_id: str, status: str
-    ) -> None:
+    def patch_scan_status(self, manifest_token: str, scan_id: str, status: str) -> None:
         url = f"{self.base_url}/api/v1/scans/{scan_id}"
         headers = {"Authorization": f"Bearer {manifest_token}"}
         try:
