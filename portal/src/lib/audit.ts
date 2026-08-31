@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma-client";
 import { setRlsContext } from "@/lib/tenant";
 import type { TenantContext } from "@/lib/tenant";
-import type { Prisma } from "@/lib/generated/prisma";
+import type { Prisma, AuditEvent } from "@/lib/generated/prisma";
 
 /**
  * Appends an AuditEvent row. This is the ONLY write path for audit events —
@@ -66,5 +66,44 @@ export async function recordAudit(
         reason,
       },
     });
+  });
+}
+
+export interface AuditFilter {
+  resourceType?: string;
+  action?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export async function listAuditEvents(
+  ctx: TenantContext,
+  filter: AuditFilter = {}
+): Promise<{ events: AuditEvent[]; nextCursor: string | null }> {
+  const limit = filter.limit ?? 50;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error("limit must be an integer between 1 and 100");
+  }
+  return prisma.$transaction(async (tx) => {
+    await setRlsContext(ctx.organizationId, tx);
+    const events = await tx.auditEvent.findMany({
+      where: {
+        organizationId: ctx.organizationId,
+        ...(filter.resourceType ? { resourceType: filter.resourceType } : {}),
+        ...(filter.action ? { action: filter.action } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit + 1,
+      // Prisma's cursor is INCLUSIVE of the cursor row: without `skip: 1` the
+      // next page repeats the cursor row and pagination loops (verified against
+      // Prisma 7.10 + the live test DB). `skip: 1` is the documented pattern
+      // (prisma.io/docs/orm/prisma-client/queries/pagination). Deviation from
+      // the brief's verbatim snippet, required by R4's non-vacuous pagination
+      // assertion — ratified by controller ruling R14.
+      ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
+    });
+    const hasMore = events.length > limit;
+    const page = hasMore ? events.slice(0, limit) : events;
+    return { events: page, nextCursor: hasMore ? page[page.length - 1].id : null };
   });
 }
