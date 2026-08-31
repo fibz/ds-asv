@@ -10,7 +10,8 @@
 - **Design docs:** `docs/superpowers/specs/2026-08-29-ds-asv-pci-portal-design.md` (approved). Phase 1 plan: `docs/superpowers/plans/2026-08-29-phase1-tenant-identity.md`. Phase 2 plan: `docs/superpowers/plans/2026-08-30-phase2-asset-inventory.md`.
 - **User Center DONE** (hub): org profile + contacts, team management (members/roles/removal w/ last-owner guard), session registry (hash-only tokens, revoke = blocked at auth), audit trail API + UI baseline (`/settings`, `/team`, `/access`, `/audit`). API contract: `portal/spec/openapi.yaml` (org/team/sessions/audit/invitations) — handoff artifact for the UI stream (Codex / UI dev).
 - **Phase 3 DONE** (scans + scan reports): Scan/ScanTarget/Finding/Report(+Attestation) models + RLS, scan creation from selected assets (lightweight scope snapshot), HMAC-signed expiring scan manifest, findings ingestion (fingerprint-deduped), Qualys-style report generation, QA attestation gate (report final only when attested in prod), scan/report API + contract. Simulated scanner (test double) drives the dev/test loop.
-- **NEXT:** Phase 3b = wire the real Python scanner service (scanner/) to the manifest + ingestion contract (consumer + findings write-back); then Phase 4 = versioned scope & authorization + dispute flow.
+- **Phase 3b DONE** (scanner service integration): real Python scanner (`scanner/`) wired to the Phase 3 manifest + ingestion contract. It consumes `POST /v1/manifests`, verifies the signed manifest, runs a black-box scan per target, maps findings, and writes findings + lifecycle back to the portal (post + patch). Portal full suite: 278 tests (`npx vitest run` in `portal/`). Scanner full suite green (`pytest tests/` in `scanner/`).
+- **NEXT:** Phase 4 = versioned scope & authorization + dispute flow.
 
 ## Environment notes
 

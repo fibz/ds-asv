@@ -22,3 +22,7 @@ Black-box scan degrades to UNAVAILABLE when nmap or testssl.sh is absent.
 Scope authorization is CIDR-aware and rejects empty scope.
 
 NVD cache loader: scripts/update_nvd.py. CPEMapper falls back to demo lookup with a warning.
+
+## Integration
+
+The scanner is a thin executor of the portal's Phase 3 manifest contract. Inbound dispatch: `POST /v1/manifests`. It verifies a signed manifest (`app/manifest.py`), runs a black-box scan per target, maps findings (`app/finding_mapping.py`), and writes them + lifecycle to the portal via `app/portal_client.py`. The legacy SQLAlchemy scan orchestration is NOT the source of truth for this flow.
