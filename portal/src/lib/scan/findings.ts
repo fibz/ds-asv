@@ -4,7 +4,7 @@ import { recordAudit } from "@/lib/audit";
 import { getScan, transitionScanStatus } from "@/lib/scan/service";
 import { issueScanManifest, simulatedScanner } from "@/lib/scan/manifest";
 import type { TenantContext } from "@/lib/tenant";
-import type { Prisma } from "@/lib/generated/prisma";
+import type { Prisma, Finding } from "@/lib/generated/prisma";
 
 export interface FindingIngest {
   assetId: string;
@@ -75,7 +75,7 @@ export async function ingestFindings(
   });
 }
 
-export async function listFindings(ctx: TenantContext, scanId: string): Promise<unknown[]> {
+export async function listFindings(ctx: TenantContext, scanId: string): Promise<Finding[]> {
   return withTenant(ctx.organizationId, (tx) =>
     tx.finding.findMany({ where: { scanId, organizationId: ctx.organizationId }, orderBy: [{ severity: "desc" }, { qid: "asc" }] })
   );
