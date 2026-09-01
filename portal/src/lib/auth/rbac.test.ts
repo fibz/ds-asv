@@ -73,4 +73,20 @@ describe("user center actions", () => {
     expect(can(mgrView, "scan.view")).toBe(true);
     expect(can(viewer, "scan.view")).toBe(false);
   });
+
+  it("scope.manage is owner/security_admin only; scope.view adds asset_manager and scan_operator", () => {
+    const op: TenantContext = { userId: "u5", organizationId: "o1", role: "scan_operator", isStaff: false, appMode: "prod" };
+    // scope.manage: owners and security admins only
+    expect(can(owner, "scope.manage")).toBe(true);
+    expect(can(sec, "scope.manage")).toBe(true);
+    expect(can(mgr, "scope.manage")).toBe(false);
+    expect(can(op, "scope.manage")).toBe(false);
+    expect(can(viewer, "scope.manage")).toBe(false);
+    // scope.view: owners, security admins, asset managers and scan operators
+    expect(can(owner, "scope.view")).toBe(true);
+    expect(can(sec, "scope.view")).toBe(true);
+    expect(can(mgr, "scope.view")).toBe(true);
+    expect(can(op, "scope.view")).toBe(true);
+    expect(can(viewer, "scope.view")).toBe(false);
+  });
 });
