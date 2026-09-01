@@ -81,7 +81,7 @@ describe("phase 3 exit criteria", () => {
     expect(bReports).toHaveLength(0);
   });
 
-  it("every Phase 3 contract path maps to a route file", async () => {
+  it("every contract path (scans/reports + Phase 4 scope/auth/disputes) maps to a route file", async () => {
     const file = fs.readFileSync(path.join(process.cwd(), "spec", "openapi.yaml"), "utf-8");
     const spec = yaml.load(file) as { paths: Record<string, any> };
     const routeDir = path.join(process.cwd(), "src", "app", "api", "v1");
@@ -94,9 +94,11 @@ describe("phase 3 exit criteria", () => {
       }
     };
     walk(routeDir);
-    const phase3Paths = Object.keys(spec.paths).filter((p) => /^\/(scans|reports)(\/|$)/.test(p));
-    expect(phase3Paths.length).toBeGreaterThanOrEqual(5);
-    for (const p of phase3Paths) {
+    // Prefix match: Phase 3 (scans, reports) + Phase 4 (scope-sets,
+    // scope-versions, disputes, findings/.../disputes) contract paths.
+    const contractPaths = Object.keys(spec.paths).filter((p) => /^\/(scans|reports|scope-sets|scope-versions|disputes|findings)(\/|$)/.test(p));
+    expect(contractPaths.length).toBeGreaterThanOrEqual(5);
+    for (const p of contractPaths) {
       const segments = p.split("/").filter(Boolean).map((s) => (s.startsWith("{") ? `[${s.slice(1, -1)}]` : s));
       const expected = path.join(routeDir, ...segments, "route.ts");
       expect(routeFiles.has(expected), `no route file for ${p}`).toBe(true);
