@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { tenantContextFromRequest } from "@/lib/tenant";
+import { can } from "@/lib/auth/rbac";
 import { listScopeSets, getScopeVersion } from "@/lib/scope/service";
 import { listScans } from "@/lib/scan/service";
 import { ScannerClient } from "./client";
@@ -9,6 +10,22 @@ import type { ApprovedScopeVersionRow, ScanRow } from "./client";
 export default async function ScannersPage() {
   const ctx = await tenantContextFromRequest({ headers: await headers() });
   if (!ctx) redirect("/sign-in");
+
+  // Read gate: server-component reads don't pass through the API role gates,
+  // so gate here — can() relaxes in dev/test, but in prod only members with
+  // scan.view may see scan data.
+  if (!can(ctx, "scan.view")) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Scanners</h1>
+          <p className="text-gray-600">
+            Insufficient permissions — scan.view is required to view scanners.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const scopeSets = await listScopeSets(ctx); // includes versions, desc by versionNumber
   const scans = await listScans(ctx); // recent first, includes targets

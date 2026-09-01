@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { tenantContextFromRequest } from "@/lib/tenant";
+import { can } from "@/lib/auth/rbac";
 import { listReports, isReportFinal } from "@/lib/scan/report";
 import { listScans } from "@/lib/scan/service";
 import { getScopeVersion, listScopeSets } from "@/lib/scope/service";
@@ -35,6 +36,22 @@ export default async function ReportsPage() {
   const ctx = await tenantContextFromRequest({ headers: await headers() });
   if (!ctx) redirect("/sign-in");
 
+  // Read gate: server-component reads don't pass through the API role gates,
+  // so gate here — can() relaxes in dev/test, but in prod only members with
+  // report.view may see report data.
+  if (!can(ctx, "report.view")) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
+          <p className="text-gray-600">
+            Insufficient permissions — report.view is required to view reports.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const [reports, scans, scopeSets] = await Promise.all([
     listReports(ctx),
     listScans(ctx),
@@ -52,6 +69,10 @@ export default async function ReportsPage() {
       // approved — a draft/submitted link (dev-forced) must never badge a
       // report FINAL, per "attested ✓ AND scope version approved ✓".
       const scope = r.scopeVersionId ? await getScopeVersion(ctx, r.scopeVersionId) : null;
+      // scope.id IS r.scopeVersionId by construction (resolved FROM that id),
+      // so the strict equality in isReportFinal is trivially true when this is
+      // non-null — the meaningful check is the approval status. Don't "fix"
+      // this into the literal formula.
       const approvedScopeVersionId = scope?.status === "approved" ? scope.id : null;
       const scopeLabel = scope
         ? `${scopeSetNameById.get(scope.scopeSetId) ?? "Scope"} — v${scope.versionNumber}`

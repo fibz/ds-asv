@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { tenantContextFromRequest } from "@/lib/tenant";
+import { can } from "@/lib/auth/rbac";
 import { listScopeSets, getScopeVersion } from "@/lib/scope/service";
 import { listAssets } from "@/lib/assets/service";
 import { ScopeClient } from "./client";
@@ -9,6 +10,22 @@ import type { ScopeSetRow, ScopeVersionRow } from "./client";
 export default async function ScopePage() {
   const ctx = await tenantContextFromRequest({ headers: await headers() });
   if (!ctx) redirect("/sign-in");
+
+  // Read gate: server-component reads don't pass through the API role gates,
+  // so gate here — can() relaxes in dev/test, but in prod only members with
+  // scope.view may see scope data.
+  if (!can(ctx, "scope.view")) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Scope</h1>
+          <p className="text-gray-600">
+            Insufficient permissions — scope.view is required to view scope.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const scopeSets = await listScopeSets(ctx); // includes versions, desc by versionNumber
   const assets = await listAssets(ctx, {}); // for the "create version from assets" picker
