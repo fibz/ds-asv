@@ -33,6 +33,11 @@ model Organization {
   findings          Finding[]
   reports           Report[]
   reportAttestations ReportAttestation[]
+  scopeSets           ScopeSet[]
+  scopeVersions       ScopeVersion[]
+  scopeItems          ScopeItem[]
+  authorizations      Authorization[]
+  disputes            Dispute[]
 }
 
 model Compliance {
@@ -105,6 +110,7 @@ model Finding {
   createdAt      DateTime @default(now())
   scan           Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  disputes       Dispute[]
 
   @@unique([scanId, assetId, qid])
   @@index([organizationId])
@@ -141,6 +147,99 @@ model ReportAttestation {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([reportId])
+  @@index([organizationId])
+}
+
+// Versioned PCI scope: a ScopeSet carries successive ScopeVersion snapshots
+// (draft -> submitted -> approved). ScopeItem rows snapshot the exact assets
+// in scope (assetId is a plain String, deliberately NOT a FK — assets may be
+// retired later while the scope snapshot must persist). An approved version is
+// bound to exactly one Authorization (signed statement), and findings may be
+// disputed (Dispute) — see Phase 4 plan.
+model ScopeSet {
+  id             String         @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  versions       ScopeVersion[]
+
+  @@index([organizationId])
+}
+
+model ScopeVersion {
+  id             String         @id @default(cuid())
+  scopeSetId     String
+  organizationId String
+  versionNumber  Int
+  status         String         @default("draft") // draft, submitted, approved
+  contentHash    String?
+  submittedById  String?
+  submittedAt    DateTime?
+  approvedById   String?
+  approvedAt     DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  scopeSet       ScopeSet       @relation(fields: [scopeSetId], references: [id], onDelete: Cascade)
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items          ScopeItem[]
+  authorization  Authorization?
+
+  @@unique([scopeSetId, versionNumber])
+  @@index([organizationId])
+}
+
+model ScopeItem {
+  id                 String      @id @default(cuid())
+  scopeVersionId     String
+  organizationId     String
+  assetId            String?
+  type               String      // ipv4 | ipv6 | cidr | fqdn
+  canonicalIdentifier String
+  createdAt          DateTime    @default(now())
+  scopeVersion       ScopeVersion @relation(fields: [scopeVersionId], references: [id], onDelete: Cascade)
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([scopeVersionId])
+  @@index([organizationId])
+}
+
+model Authorization {
+  id               String       @id @default(cuid())
+  organizationId   String
+  scopeVersionId   String       @unique
+  statementHash    String
+  scopeVersionHash String
+  signature        String
+  status           String       @default("issued") // issued, revoked
+  issuedById       String?
+  issuedAt         DateTime     @default(now())
+  createdAt        DateTime     @default(now())
+  scopeVersion     ScopeVersion @relation(fields: [scopeVersionId], references: [id], onDelete: Cascade)
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+model Dispute {
+  id               String      @id @default(cuid())
+  findingId        String
+  organizationId   String
+  status           String      @default("open") // open, resolved, rejected
+  justification    String
+  resolutionNote   String?
+  raisedById       String
+  raisedAt         DateTime    @default(now())
+  moderatedById    String?
+  moderatedAt      DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  finding          Finding     @relation(fields: [findingId], references: [id], onDelete: Cascade)
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([findingId])
   @@index([organizationId])
 }
 
