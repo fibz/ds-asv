@@ -114,8 +114,8 @@ export function isReportFinal(report: {
 }): boolean {
   if (report.status !== "attested") return false;
   // Legacy caller (Phase 3 semantics): the caller knows nothing about scope
-  // linkage. Attested alone is final. (Real Phase 3 rows carry scopeVersionId:
-  // null and no approvedScopeVersionId key.)
+  // linkage — the approvedScopeVersionId key is ABSENT (undefined). Attested
+  // alone is final regardless of the report's scopeVersionId value.
   if (report.approvedScopeVersionId === undefined) return true;
   // New-style caller: the report is final only if it recorded an approved
   // scope version AND that recorded version is the approved one.

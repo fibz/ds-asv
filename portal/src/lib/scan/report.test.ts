@@ -143,6 +143,40 @@ describe("QA attestation gate", () => {
     expect(attested?.status).toBe("attested");
     expect(isReportFinal(attested!)).toBe(true);
   });
+
+  it("prod attest rejects a report with no approved scope version (null or never-approved link)", async () => {
+    // Negative case for the Phase 5 prod scope guard (review round 1). The
+    // Task 4 scan gate forbids creating scans for out-of-scope assets in prod,
+    // so a genuinely no-coverage scan + report can only exist when that gate is
+    // relaxed — build it under dev, then attest under prod. (Positive control:
+    // test 1 above attests an approved-scope report successfully under the same
+    // prod env.)
+    vi.stubEnv("APP_MODE", "dev");
+    const noScopeAssetId = (await withTenant(ORG, (tx) => tx.asset.create({ data: { id: "asset_report_no_scope", organizationId: ORG, type: "ipv4", canonicalIdentifier: "10.3.3.21", lifecycleState: "active", verificationState: "verified" } }))).id;
+    const noScopeScanId = (await createScanFromAssets({ ...ctx, role: "scan_operator" }, { name: "no scope scan", assetIds: [noScopeAssetId] })).id;
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, noScopeScanId, "RUNNING");
+    await ingestFindings({ ...ctx, role: "scan_operator" }, noScopeScanId, [
+      { assetId: noScopeAssetId, qid: "q1", severity: "4", pciSeverity: "High", title: "TLS weak" },
+    ]);
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, noScopeScanId, "COMPLETED");
+    const unlinked = await buildReport(ctx, noScopeScanId);
+    expect(unlinked.scopeVersionId).toBeNull(); // genuinely no approved coverage
+    await submitReport(ctx, unlinked.id);
+    vi.stubEnv("APP_MODE", "prod");
+    const staff: TenantContext = { ...ctx, isStaff: true };
+    // null link → guard rejects before any attestation write
+    await expect(attestReport(staff, unlinked.id)).rejects.toThrow(
+      "cannot attest: report has no approved scope version (required in prod)"
+    );
+    // never-approved link (report forced onto a draft version) → same rejection
+    const { createScopeSet, createScopeVersion } = await import("@/lib/scope/service");
+    const set = await createScopeSet(ctx, { name: "No Approve" });
+    const draftV = await createScopeVersion(ctx, set.id, { assetIds: [noScopeAssetId] }); // stays draft
+    await withTenant(ORG, (tx) => tx.report.update({ where: { id: unlinked.id }, data: { scopeVersionId: draftV.id } }));
+    await expect(attestReport(staff, unlinked.id)).rejects.toThrow(
+      "cannot attest: report has no approved scope version (required in prod)"
+    );
+  });
 });
 
 describe("report scope linkage (Phase 5)", () => {
