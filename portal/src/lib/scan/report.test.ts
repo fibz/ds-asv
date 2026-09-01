@@ -175,21 +175,15 @@ describe("report scope linkage (Phase 5)", () => {
     await submitScopeVersion(ctx, v1.id);
     await approveScopeVersion(ctx, v1.id);
     expect(await resolveReportScopeVersionId(ctx, scanId)).toBe(v1.id);
-    // a second, later approved version supersedes it
+    // a second, later approved version of the same set supersedes it
     const v2 = await createScopeVersion(ctx, set.id, { assetIds: [linkedAssetId] });
     await submitScopeVersion(ctx, v2.id);
     await approveScopeVersion(ctx, v2.id);
     expect(await resolveReportScopeVersionId(ctx, scanId)).toBe(v2.id);
-    // an approved version in another set also resolves (latest approved per set)
-    const otherSet = await createScopeSet(ctx, { name: "Scope-Other" });
-    const ov1 = await createScopeVersion(ctx, otherSet.id, { assetIds: [linkedAssetId] });
-    await submitScopeVersion(ctx, ov1.id);
-    await approveScopeVersion(ctx, ov1.id);
-    expect(await resolveReportScopeVersionId(ctx, scanId)).toBeTruthy();
-    // a draft version never resolves
-    const emptySet = await createScopeSet(ctx, { name: "Empty" });
-    await createScopeVersion(ctx, emptySet.id, { assetIds: [linkedAssetId] }); // stays draft
-    expect(await resolveReportScopeVersionId(ctx, scanId)).toBeTruthy(); // still resolves via the approved ones
+    // a draft version never supersedes an approved one — resolution is unchanged
+    const draftSet = await createScopeSet(ctx, { name: "Scope-Draft" });
+    await createScopeVersion(ctx, draftSet.id, { assetIds: [linkedAssetId] }); // stays draft
+    expect(await resolveReportScopeVersionId(ctx, scanId)).toBe(v2.id);
   });
 
   it("resolveReportScopeVersionId is null for a scan with no approved coverage", async () => {
@@ -202,19 +196,36 @@ describe("report scope linkage (Phase 5)", () => {
   it("buildReport records the approved scope version on create and never re-points an existing link", async () => {
     const { resolveReportScopeVersionId } = await import("@/lib/scan/service");
     const { createScopeSet, createScopeVersion, submitScopeVersion, approveScopeVersion } = await import("@/lib/scope/service");
-    // prior test left Scope-Linked v2 (approved, latest per set) covering linkedAssetId
-    const expected = await resolveReportScopeVersionId(ctx, scanId);
-    expect(expected).toBeTruthy();
-    const report = await buildReport(ctx, scanId);
-    expect(report.scopeVersionId).toBe(expected);
-    // a NEWER approved version in another set exists now; refresh must not re-point
-    const set2 = await createScopeSet(ctx, { name: "Scope-Newer" });
-    const nv1 = await createScopeVersion(ctx, set2.id, { assetIds: [linkedAssetId] });
-    await submitScopeVersion(ctx, nv1.id);
-    await approveScopeVersion(ctx, nv1.id);
-    const refreshed = await buildReport(ctx, scanId);
+    // Own asset + scan + scope set for this test: nothing else in the suite
+    // approves a version covering this asset, so every resolution below is
+    // deterministic regardless of scope-set id ordering.
+    const frozenAssetId = (await withTenant(ORG, (tx) => tx.asset.create({ data: { id: "asset_report_frozen", organizationId: ORG, type: "ipv4", canonicalIdentifier: "10.3.3.12", lifecycleState: "active", verificationState: "verified" } }))).id;
+    const frozenScanId = (await createScanFromAssets({ ...ctx, role: "scan_operator" }, { name: "frozen scan", assetIds: [frozenAssetId] })).id;
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, frozenScanId, "RUNNING");
+    await ingestFindings({ ...ctx, role: "scan_operator" }, frozenScanId, [
+      { assetId: frozenAssetId, qid: "q4", severity: "1", pciSeverity: "Low", title: "Minor" },
+    ]);
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, frozenScanId, "COMPLETED");
+
+    const set = await createScopeSet(ctx, { name: "Scope-Frozen" });
+    const v1 = await createScopeVersion(ctx, set.id, { assetIds: [frozenAssetId] });
+    await submitScopeVersion(ctx, v1.id);
+    await approveScopeVersion(ctx, v1.id);
+    // v1 is the only approved version covering frozenAssetId → create links to it
+    expect(await resolveReportScopeVersionId(ctx, frozenScanId)).toBe(v1.id);
+    const report = await buildReport(ctx, frozenScanId);
+    expect(report.scopeVersionId).toBe(v1.id);
+    // a newer approved version in the SAME set supersedes for the resolver …
+    const v2 = await createScopeVersion(ctx, set.id, { assetIds: [frozenAssetId] });
+    await submitScopeVersion(ctx, v2.id);
+    await approveScopeVersion(ctx, v2.id);
+    expect(await resolveReportScopeVersionId(ctx, frozenScanId)).toBe(v2.id);
+    // … but the report's link stays frozen at the ORIGINAL v1 (never re-point).
+    // Without the `existing.scopeVersionId == null` guard on the update path,
+    // refresh would overwrite the link to v2.id and this assertion fails.
+    const refreshed = await buildReport(ctx, frozenScanId);
     expect(refreshed.id).toBe(report.id); // upsert by scanId
-    expect(refreshed.scopeVersionId).toBe(report.scopeVersionId); // link frozen at first resolution
+    expect(refreshed.scopeVersionId).toBe(v1.id);
   });
 
   it("buildReport leaves the link null for a dev-built report with no approved coverage", async () => {
