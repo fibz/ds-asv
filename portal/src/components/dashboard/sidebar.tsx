@@ -10,6 +10,7 @@ const navigation = [
   { name: "Scope", href: "/scope" },
   { name: "Compliance", href: "/compliance" },
   { name: "Scanners", href: "/scanners" },
+  { name: "Reports", href: "/reports" },
   { name: "WAF", href: "/waf" },
   { name: "SIEM", href: "/siem" },
   { name: "API Keys", href: "/api-keys" },

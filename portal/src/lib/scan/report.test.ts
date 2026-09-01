@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma-client";
 import { setRlsContext } from "@/lib/tenant";
 import { createScanFromAssets, transitionScanStatus } from "@/lib/scan/service";
 import { ingestFindings } from "@/lib/scan/findings";
-import { buildReport, getReport, ReportGuardError } from "@/lib/scan/report";
+import { buildReport, getReport, ReportGuardError, listReports } from "@/lib/scan/report";
 import { submitReport, attestReport, isReportFinal } from "@/lib/scan/report";
 import type { TenantContext } from "@/lib/tenant";
 import type { Prisma } from "@/lib/generated/prisma";
@@ -314,5 +314,46 @@ describe("report finalization gate (Phase 5)", () => {
     expect(isReportFinal({ status: "attested", scopeVersionId: "other_v", approvedScopeVersionId: v.id })).toBe(false);
     // attested + null scope link → not final (dev report with no authority)
     expect(isReportFinal({ status: "attested", scopeVersionId: null, approvedScopeVersionId: null })).toBe(false);
+  });
+});
+
+describe("report listing (Phase 5)", () => {
+  // Self-contained harness (same pattern as the other describes: own asset +
+  // COMPLETED scan with findings, dev env — no APP_MODE stub in effect here,
+  // so createScanFromAssets does not trip the prod scope gate). The report is
+  // submitted so the include'd attestation row exists for the shape check.
+  let listingReportId = "";
+  beforeAll(async () => {
+    await adminWipe();
+    await withTenant(ORG, (tx) => tx.organization.create({ data: { id: ORG, name: "Report Org" } }));
+    await withTenant(ORG, (tx) => tx.user.create({ data: { id: USER, idpId: "kc-report", email: "r@x.com" } }));
+    const listingAssetId = (await withTenant(ORG, (tx) => tx.asset.create({ data: { id: "asset_report_list", organizationId: ORG, type: "ipv4", canonicalIdentifier: "10.3.3.30", lifecycleState: "active", verificationState: "verified" } }))).id;
+    const listingScanId = (await createScanFromAssets({ ...ctx, role: "scan_operator" }, { name: "listing scan", assetIds: [listingAssetId] })).id;
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, listingScanId, "RUNNING");
+    await ingestFindings({ ...ctx, role: "scan_operator" }, listingScanId, [
+      { assetId: listingAssetId, qid: "q1", severity: "4", pciSeverity: "High", title: "TLS weak" },
+    ]);
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, listingScanId, "COMPLETED");
+    const report = await buildReport(ctx, listingScanId);
+    listingReportId = report.id;
+    await submitReport(ctx, report.id); // attestation row (status submitted)
+  });
+  afterAll(async () => { await adminWipe(); await prisma.$disconnect(); });
+
+  it("returns org-scoped reports with the attestation attached", async () => {
+    const reports = await listReports(ctx);
+    const row = reports.find((r) => r.id === listingReportId);
+    expect(row).toBeDefined();
+    expect(row!.scanId).toBeTruthy();
+    expect(row!.status).toBe("submitted");
+    expect(row!.scopeVersionId).toBeNull(); // dev-built report — no approved scope authority
+    expect(row!.attestation).not.toBeNull();
+    expect(row!.attestation!.reportId).toBe(listingReportId);
+    expect(row!.attestation!.status).toBe("submitted");
+  });
+
+  it("is org-scoped — another organization sees no rows", async () => {
+    const other: TenantContext = { ...ctx, organizationId: "org_report_0002" };
+    expect(await listReports(other)).toEqual([]);
   });
 });

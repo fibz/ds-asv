@@ -5,7 +5,7 @@ import { listFindings } from "@/lib/scan/findings";
 import { resolveReportScopeVersionId } from "@/lib/scan/service";
 import { getScopeVersion } from "@/lib/scope/service";
 import type { TenantContext } from "@/lib/tenant";
-import type { Prisma, Report } from "@/lib/generated/prisma";
+import type { Prisma, Report, ReportAttestation } from "@/lib/generated/prisma";
 
 export class ReportGuardError extends Error {}
 
@@ -58,6 +58,23 @@ export async function buildReport(ctx: TenantContext, scanId: string): Promise<R
 export async function getReport(ctx: TenantContext, reportId: string): Promise<(Report & { attestation: unknown }) | null> {
   return withTenant(ctx.organizationId, (tx) =>
     tx.report.findUnique({ where: { id: reportId }, include: { attestation: true } })
+  );
+}
+
+/**
+ * Phase 5: org-scoped report listing for the Reports UI. Thin read — no
+ * aggregation, no scope resolution (the page resolves each report's scope
+ * version approval via getScopeVersion) — so each row carries only the report
+ * plus its attestation (one-to-one; null until submission, see
+ * submitReport).
+ */
+export async function listReports(ctx: TenantContext): Promise<(Report & { attestation: ReportAttestation | null })[]> {
+  return withTenant(ctx.organizationId, (tx) =>
+    tx.report.findMany({
+      where: { organizationId: ctx.organizationId },
+      include: { attestation: true },
+      orderBy: { createdAt: "desc" },
+    })
   );
 }
 
