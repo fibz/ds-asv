@@ -13,6 +13,7 @@ vi.mock("@/lib/prisma-client", () => {
     organizationMembership: { findFirst: vi.fn() },
     session: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     asset: { findMany: vi.fn() },
+    scopeItem: { findFirst: vi.fn().mockResolvedValue({ id: "si1" }) }, // Task 4: gate's assetInApprovedScope read (in approved scope)
     scan: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     scanTarget: { create: vi.fn(), findMany: vi.fn() },
     auditEvent: { create: vi.fn() },

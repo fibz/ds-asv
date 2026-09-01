@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { Client } from "pg";
 import { prisma } from "@/lib/prisma-client";
 import { setRlsContext } from "@/lib/tenant";
@@ -80,5 +80,26 @@ describe("scan service", () => {
     const scan = await createScanFromAssets(ctx, { name: "audited", assetIds: [assetB] });
     const audits = await withTenant(ORG, (tx) => tx.auditEvent.findMany({ where: { action: { in: ["scan.created", "scan.status.updated"] }, resourceId: scan.id } }));
     expect(audits.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // Gate runs inside this describe so it executes BEFORE the afterAll wipe (a
+  // top-level describe would run after adminWipe deleted the org/assets).
+  describe("scan creation scope gate (prod)", () => {
+    it("rejects unapproved-scope assets in prod, allows approved ones", async () => {
+      const { createScopeSet, createScopeVersion, submitScopeVersion, approveScopeVersion } = await import("@/lib/scope/service");
+      const set = await createScopeSet(ctx, { name: "Gated" });
+      const version = await createScopeVersion(ctx, set.id, { assetIds: [assetA] });
+      await submitScopeVersion(ctx, version.id);
+      await approveScopeVersion(ctx, version.id);
+      // ctx.appMode is "prod" but the gate reads the ENV via getAppMode() (defaults "dev"); force prod.
+      vi.stubEnv("APP_MODE", "prod");
+      try {
+        // assetA is in the approved scope version → ok; assetB is not → rejected
+        await expect(createScanFromAssets(ctx, { name: "ok", assetIds: [assetA] })).resolves.toBeTruthy();
+        await expect(createScanFromAssets(ctx, { name: "bad", assetIds: [assetB] })).rejects.toThrowError(/approved scope version/i);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
   });
 });

@@ -85,6 +85,13 @@ describe("QA attestation gate", () => {
     await withTenant(ORG, (tx) => tx.user.create({ data: { id: USER, idpId: "kc-report", email: "r@x.com" } }));
     assetId = (await withTenant(ORG, (tx) => tx.asset.create({ data: { id: "asset_report_1", organizationId: ORG, type: "ipv4", canonicalIdentifier: "10.3.3.3", lifecycleState: "active", verificationState: "verified" } }))).id;
     draftAssetId = (await withTenant(ORG, (tx) => tx.asset.create({ data: { id: "asset_report_2", organizationId: ORG, type: "ipv4", canonicalIdentifier: "10.3.3.4", lifecycleState: "active", verificationState: "verified" } }))).id;
+    // This describe runs under prod (stubbed above), so the Task 4 scope gate
+    // requires both assets to sit in an approved scope version before scans.
+    const { createScopeSet, createScopeVersion, submitScopeVersion, approveScopeVersion } = await import("@/lib/scope/service");
+    const scopeSet = await createScopeSet(ctx, { name: "Report Gate" });
+    const scopeVersion = await createScopeVersion(ctx, scopeSet.id, { assetIds: [assetId, draftAssetId] });
+    await submitScopeVersion(ctx, scopeVersion.id);
+    await approveScopeVersion(ctx, scopeVersion.id);
     // Scan for test 1 (fully transitions to attested).
     scanId = (await createScanFromAssets({ ...ctx, role: "scan_operator" }, { name: "report scan", assetIds: [assetId] })).id;
     await transitionScanStatus({ ...ctx, role: "scan_operator" }, scanId, "RUNNING");

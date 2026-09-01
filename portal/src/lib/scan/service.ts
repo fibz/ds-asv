@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma-client";
 import { setRlsContext, getAppMode } from "@/lib/tenant";
 import { recordAudit } from "@/lib/audit";
+import { assetInApprovedScope } from "@/lib/scope/service";
 import type { TenantContext } from "@/lib/tenant";
 import type { Prisma, Scan, ScanTarget } from "@/lib/generated/prisma";
 
@@ -35,6 +36,12 @@ export async function createScanFromAssets(
       if (a.lifecycleState === "retired") throw new ScanGuardError(`asset ${a.canonicalIdentifier} is retired`);
       if (prod && a.verificationState !== "verified") {
         throw new ScanGuardError(`asset ${a.canonicalIdentifier} is not verified (required in prod)`);
+      }
+    }
+    if (prod) {
+      for (const a of assets) {
+        const inScope = await assetInApprovedScope(ctx, a.id);
+        if (!inScope) throw new ScanGuardError(`asset ${a.canonicalIdentifier} is not in an approved scope version (required in prod)`);
       }
     }
     const scan = await tx.scan.create({ data: { organizationId: ctx.organizationId, name, requestedById: ctx.userId } });
