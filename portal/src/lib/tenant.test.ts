@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from "vitest";
 import { Client } from "pg";
+import { jwtVerify } from "jose";
 import { prisma } from "@/lib/prisma-client";
 import {
   resolveTenantContext,
@@ -7,8 +8,16 @@ import {
   getAppMode,
   getParentOrg,
   isRole,
+  tenantContextFromRequest,
 } from "@/lib/tenant";
 import type { Prisma } from "@/lib/generated/prisma";
+
+// Mock jose so the request-path staff tests drive verifyToken with fixed
+// claims instead of touching a real Keycloak issuer.
+vi.mock("jose", () => ({
+  jwtVerify: vi.fn(),
+  createRemoteJWKSet: vi.fn(() => ({ mock: "jwks" })),
+}));
 
 // Fixed ids make re-runs idempotent and the isolation assertions deterministic.
 const ORG_A = "org_aaaa_0001";
@@ -249,5 +258,124 @@ describe("isRole (6-role union guard)", () => {
     expect(isRole(undefined)).toBe(false);
     expect(isRole(null)).toBe(false);
     expect(isRole(42)).toBe(false);
+  });
+});
+
+describe("staff identity resolution", () => {
+  const STAFF_ORG = "org_staff_0001";
+  const STAFF_USER = "user_staff_0001";
+  // idpId "kc-staff-a", email "staff@a.com" — seeded below; the tenant
+  // describe above wipes ITS orgs/users in afterAll, so staff tests own
+  // their own org + membership (the request path needs a real one).
+  beforeAll(async () => {
+    await wipeTenant(STAFF_ORG);
+    await adminDeleteUsers([STAFF_USER]);
+    await withTenant(STAFF_ORG, async (tx) => {
+      await tx.organization.create({ data: { id: STAFF_ORG, name: "Staff Org" } });
+      await tx.user.create({ data: { id: STAFF_USER, idpId: "kc-staff-a", email: "staff@a.com" } });
+      await tx.organizationMembership.create({
+        data: { userId: STAFF_USER, organizationId: STAFF_ORG, role: "organization_owner" },
+      });
+    });
+  });
+
+  afterAll(async () => {
+    await wipeTenant(STAFF_ORG);
+    await adminDeleteUsers([STAFF_USER]);
+  });
+
+  beforeEach(() => {
+    vi.stubEnv("KEYCLOAK_ISSUER", "https://kc.test");
+    vi.stubEnv("KEYCLOAK_CLIENT_ID", "test");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it("resolvesAsStaff honors STAFF_ROLE (default asv-staff, case-insensitive)", async () => {
+    const { resolvesAsStaff } = await import("@/lib/tenant");
+    vi.stubEnv("STAFF_ROLE", "");
+    try {
+      expect(resolvesAsStaff(["asv-staff"])).toBe(true);
+      expect(resolvesAsStaff(["ASV-STAFF"])).toBe(true);
+      expect(resolvesAsStaff(["scan_operator"])).toBe(false);
+      expect(resolvesAsStaff([])).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("staffUserIdOverride parses comma-separated ids/emails only in dev/test", async () => {
+    const { staffUserIdOverride } = await import("@/lib/tenant");
+    vi.stubEnv("STAFF_USER_IDS", "kc-qa-1, qa@x.com , ");
+    try {
+      expect(staffUserIdOverride()).toEqual(["kc-qa-1", "qa@x.com"]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(staffUserIdOverride()).toEqual([]); // unset → empty
+  });
+
+  // Request-path overlay: the seeded STAFF_USER has a real org + membership,
+  // so the full tenantContextFromRequest path runs against the live DB.
+  function staffRequest(claims: Record<string, unknown>) {
+    vi.mocked(jwtVerify).mockResolvedValueOnce({
+      payload: claims,
+      protectedHeader: {},
+    } as never);
+    return {
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "authorization" ? "Bearer a.b.c" : null,
+      },
+    };
+  }
+
+  it("prod: a staff realm-role claim reaches tenantContextFromRequest as isStaff=true", async () => {
+    vi.stubEnv("APP_MODE", "prod");
+    const ctx = await tenantContextFromRequest(
+      staffRequest({
+        sub: "kc-staff-a",
+        email: "staff@a.com",
+        realm_access: { roles: ["asv-staff"] },
+      }) as never
+    );
+    expect(ctx).not.toBeNull();
+    expect(ctx?.isStaff).toBe(true);
+    // the rest of the resolved context is unchanged by the overlay
+    expect(ctx?.userId).toBe(STAFF_USER);
+    expect(ctx?.organizationId).toBe(STAFF_ORG);
+    expect(ctx?.role).toBe("organization_owner");
+  });
+
+  it("prod: a non-staff claim stays isStaff=false (fail-closed)", async () => {
+    vi.stubEnv("APP_MODE", "prod");
+    const ctx = await tenantContextFromRequest(
+      staffRequest({ sub: "kc-staff-a", email: "staff@a.com" }) as never
+    );
+    expect(ctx).not.toBeNull();
+    expect(ctx?.isStaff).toBe(false);
+  });
+
+  it("dev/test: STAFF_USER_IDS override grants staff via idpId match", async () => {
+    vi.stubEnv("APP_MODE", "test");
+    vi.stubEnv("STAFF_USER_IDS", "kc-staff-a");
+    const ctx = await tenantContextFromRequest(
+      staffRequest({ sub: "kc-staff-a", email: "staff@a.com" }) as never
+    );
+    expect(ctx).not.toBeNull();
+    expect(ctx?.isStaff).toBe(true);
+  });
+
+  it("prod: STAFF_USER_IDS override never grants staff (env list is dev/test only)", async () => {
+    vi.stubEnv("APP_MODE", "prod");
+    vi.stubEnv("STAFF_USER_IDS", "kc-staff-a");
+    const ctx = await tenantContextFromRequest(
+      staffRequest({ sub: "kc-staff-a", email: "staff@a.com" }) as never
+    );
+    expect(ctx).not.toBeNull();
+    expect(ctx?.isStaff).toBe(false);
   });
 });

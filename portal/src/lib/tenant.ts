@@ -48,6 +48,23 @@ export function getAppMode(): string {
   return process.env.APP_MODE || "dev";
 }
 
+const DEFAULT_STAFF_ROLE = "asv-staff";
+
+/** True when the verified realm roles include the configured staff role. */
+export function resolvesAsStaff(roles: string[]): boolean {
+  const wanted = (process.env.STAFF_ROLE || DEFAULT_STAFF_ROLE).toLowerCase();
+  // Role names come lowercased from realmRoles() already; lowercasing here
+  // keeps the compare case-insensitive for any other caller (idempotent).
+  return roles.map((r) => r.toLowerCase()).includes(wanted);
+}
+
+/** dev/test-only staff override: comma-separated idpIds or emails. */
+export function staffUserIdOverride(): string[] {
+  const raw = process.env.STAFF_USER_IDS;
+  if (!raw) return [];
+  return raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+
 /**
  * Resolves tenant context from the authenticated identity.
  * organizationId is derived from the user's membership, never from client input.
@@ -101,6 +118,17 @@ export async function tenantContextFromRequest(request: {
   } catch {
     return null;
   }
+  // Staff identity: prod requires the verified realm role claim; dev/test
+  // additionally honors the STAFF_USER_IDS override. Both gates (report
+  // attestation, dispute moderation) read ctx.isStaff — this overlay is the
+  // single place staff is granted.
+  const staff =
+    getAppMode() === "prod"
+      ? resolvesAsStaff(keycloakUser.roles)
+      : resolvesAsStaff(keycloakUser.roles) ||
+        staffUserIdOverride().includes(keycloakUser.idpId.toLowerCase()) ||
+        staffUserIdOverride().includes(keycloakUser.email.toLowerCase());
+  if (staff) ctx = { ...ctx, isStaff: true };
   // Session registry (user center): a revoked token is rejected; a valid
   // token is recorded. Registry unavailability never breaks auth (availability
   // over registry) — but when reachable, a revoked row is authoritative.
