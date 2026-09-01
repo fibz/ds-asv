@@ -88,7 +88,7 @@ export async function approveScopeVersion(ctx: TenantContext, versionId: string)
   });
 }
 
-export async function listScopeSets(ctx: TenantContext): Promise<ScopeSet[]> {
+export async function listScopeSets(ctx: TenantContext): Promise<(ScopeSet & { versions: ScopeVersion[] })[]> {
   return withTenant(ctx.organizationId, (tx) =>
     tx.scopeSet.findMany({ where: { organizationId: ctx.organizationId }, orderBy: { createdAt: "desc" }, include: { versions: { orderBy: { versionNumber: "desc" } } } })
   );
