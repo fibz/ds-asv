@@ -96,3 +96,23 @@ describe("phase 4 scope + authorization contract", () => {
     }
   });
 });
+
+describe("phase 4 dispute contract", () => {
+  const spec = loadSpec();
+  const paths = spec.paths ?? {};
+
+  it("documents raising a dispute on a finding and moderating it", () => {
+    expect(paths["/findings/{findingId}/disputes"].post).toBeDefined();
+    expect(paths["/disputes/{disputeId}/moderate"].post).toBeDefined();
+    // moderate takes the {status, note?} body
+    const requestBody = paths["/disputes/{disputeId}/moderate"].post.requestBody;
+    expect(requestBody).toBeDefined();
+  });
+
+  it("defines dispute-domain schemas", () => {
+    const schemas = spec.components?.schemas ?? {};
+    for (const name of ["Dispute", "DisputeModeration"]) {
+      expect(schemas[name], `missing schema ${name}`).toBeDefined();
+    }
+  });
+});

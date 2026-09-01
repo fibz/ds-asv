@@ -19,6 +19,8 @@ export function can(user: TenantContext, action: string, resource?: { status?: s
   if (action === "scan.run") return hasRole(user, "organization_owner", "security_admin", "scan_operator");
   if (action === "scan.view") return hasRole(user, "organization_owner", "security_admin", "asset_manager", "scan_operator");
   if (action === "report.view") return hasRole(user, "organization_owner", "security_admin", "report_viewer");
+  if (action === "finding.dispute") return hasRole(user, "organization_owner", "security_admin", "asset_manager", "scan_operator", "report_viewer");
+  if (action === "dispute.moderate") return hasRole(user, "organization_owner", "security_admin");
   if (action === "api-key.manage") return hasRole(user, "organization_owner", "security_admin");
   if (action === "org.view") return true; // any authenticated member
   if (action === "org.manage") return hasRole(user, "organization_owner");

@@ -100,3 +100,24 @@ describe("user center actions", () => {
     expect(can(viewer, "scope.view")).toBe(false);
   });
 });
+
+describe("dispute actions", () => {
+  const owner: TenantContext = { userId: "u1", organizationId: "o1", role: "organization_owner", isStaff: false, appMode: "prod" };
+  const sec: TenantContext = { userId: "u2", organizationId: "o1", role: "security_admin", isStaff: false, appMode: "prod" };
+  const mgr: TenantContext = { userId: "u3", organizationId: "o1", role: "asset_manager", isStaff: false, appMode: "prod" };
+  const op: TenantContext = { userId: "u5", organizationId: "o1", role: "scan_operator", isStaff: false, appMode: "prod" };
+  const viewer: TenantContext = { userId: "u4", organizationId: "o1", role: "report_viewer", isStaff: false, appMode: "prod" };
+  const billing: TenantContext = { userId: "u6", organizationId: "o1", role: "billing_admin", isStaff: false, appMode: "prod" };
+
+  it("finding.dispute covers everyone who can view findings; dispute.moderate is owner/security_admin in prod", () => {
+    // anyone who can read findings may raise a dispute
+    for (const u of [owner, sec, mgr, op, viewer]) expect(can(u, "finding.dispute")).toBe(true);
+    expect(can(viewer, "finding.dispute")).toBe(true); // viewer allowed
+    expect(can(billing, "finding.dispute")).toBe(false);
+    // moderation is the QA/admin action
+    expect(can(owner, "dispute.moderate")).toBe(true);
+    expect(can(sec, "dispute.moderate")).toBe(true);
+    for (const u of [mgr, op, viewer, billing]) expect(can(u, "dispute.moderate")).toBe(false);
+    expect(can(viewer, "dispute.moderate")).toBe(false); // viewer denied
+  });
+});

@@ -462,6 +462,65 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /findings/{findingId}/disputes:
+    post:
+      operationId: raiseDispute
+      summary: Raise a dispute on a finding with a justification (finding.dispute — anyone who can view findings)
+      tags: [user-center, disputes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: findingId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [justification]
+              properties:
+                justification: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '201':
+          description: Dispute raised
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispute: { $ref: '#/components/schemas/Dispute' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /disputes/{disputeId}/moderate:
+    post:
+      operationId: moderateDispute
+      summary: QA moderation of an open dispute (dispute.moderate — owner/security admin; prod requires staff reviewer)
+      tags: [user-center, disputes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: disputeId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DisputeModeration' }
+      responses:
+        '200':
+          description: Dispute moderated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispute: { $ref: '#/components/schemas/Dispute' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /waf/rules:
     get:
       tags: [WAF]
@@ -1496,6 +1555,30 @@ components:
       required: [authorization]
       properties:
         authorization: { $ref: '#/components/schemas/Authorization' }
+
+    Dispute:
+      type: object
+      required: [id, findingId, organizationId, status, justification, raisedById, raisedAt, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        findingId: { type: string }
+        organizationId: { type: string }
+        status: { type: string, enum: [open, resolved, rejected] }
+        justification: { type: string }
+        resolutionNote: { type: [string, 'null'] }
+        raisedById: { type: string }
+        raisedAt: { type: string, format: date-time }
+        moderatedById: { type: [string, 'null'] }
+        moderatedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    DisputeModeration:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [resolved, rejected] }
+        note: { type: string }
 
     RuleCondition:
       type: object
