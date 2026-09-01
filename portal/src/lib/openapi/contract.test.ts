@@ -116,3 +116,22 @@ describe("phase 4 dispute contract", () => {
     }
   });
 });
+
+describe("phase 5 report finalization contract", () => {
+  const spec = loadSpec();
+
+  it("documents the report→scope-version link as a nullable string", () => {
+    const report = spec.components?.schemas?.Report;
+    expect(report, "missing schema Report").toBeDefined();
+    const scopeVersionId = report.properties?.scopeVersionId;
+    expect(scopeVersionId, "Report.scopeVersionId missing").toBeDefined();
+    expect(scopeVersionId.type).toBe("string");
+    expect(scopeVersionId.nullable).toBe(true);
+  });
+
+  it("notes that finality requires both attestation and the approved scope version", () => {
+    const report = spec.components?.schemas?.Report;
+    expect(String(report.description).toLowerCase()).toContain("final");
+    expect(String(report.description).toLowerCase()).toContain("approve");
+  });
+});

@@ -240,3 +240,45 @@ describe("report scope linkage (Phase 5)", () => {
     expect(report.scopeVersionId).toBeNull();
   });
 });
+
+describe("report finalization gate (Phase 5)", () => {
+  // Self-contained harness: scanId is per-describe in this file (Task 1
+  // discovery), so this gate seeds its own asset + COMPLETED scan with
+  // findings, mirroring the "frozen" describe above. Runs under the file's
+  // dev env (no APP_MODE stub in effect) — the scope approval below links the
+  // report to the ONLY approved version covering the gate asset.
+  let gateAssetId = "";
+  let gateScanId = "";
+  beforeAll(async () => {
+    await adminWipe();
+    await withTenant(ORG, (tx) => tx.organization.create({ data: { id: ORG, name: "Report Org" } }));
+    await withTenant(ORG, (tx) => tx.user.create({ data: { id: USER, idpId: "kc-report", email: "r@x.com" } }));
+    gateAssetId = (await withTenant(ORG, (tx) => tx.asset.create({ data: { id: "asset_report_gate", organizationId: ORG, type: "ipv4", canonicalIdentifier: "10.3.3.13", lifecycleState: "active", verificationState: "verified" } }))).id;
+    gateScanId = (await createScanFromAssets({ ...ctx, role: "scan_operator" }, { name: "gate scan", assetIds: [gateAssetId] })).id;
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, gateScanId, "RUNNING");
+    await ingestFindings({ ...ctx, role: "scan_operator" }, gateScanId, [
+      { assetId: gateAssetId, qid: "q1", severity: "4", pciSeverity: "High", title: "TLS weak" },
+    ]);
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, gateScanId, "COMPLETED");
+  });
+  afterAll(async () => { await adminWipe(); await prisma.$disconnect(); });
+
+  it("report is NOT final unless attested AND its linked scope version is approved", async () => {
+    const { buildReport, isReportFinal } = await import("@/lib/scan/report");
+    const { approveScopeVersion, createScopeSet, createScopeVersion, submitScopeVersion } = await import("@/lib/scope/service");
+    const set = await createScopeSet(ctx, { name: "Gate" });
+    const v = await createScopeVersion(ctx, set.id, { assetIds: [gateAssetId] });
+    await submitScopeVersion(ctx, v.id);
+    await approveScopeVersion(ctx, v.id);
+    const report = await buildReport(ctx, gateScanId);
+    expect(report.scopeVersionId).toBe(v.id); // linkage recorded
+    // draft + approved scope → not final
+    expect(isReportFinal({ status: "draft", scopeVersionId: v.id, approvedScopeVersionId: v.id })).toBe(false);
+    // attested + approved scope → final
+    expect(isReportFinal({ status: "attested", scopeVersionId: v.id, approvedScopeVersionId: v.id })).toBe(true);
+    // attested + approved scope but a DIFFERENT/later approved version id → not final (the linked one must be THE approved one)
+    expect(isReportFinal({ status: "attested", scopeVersionId: "other_v", approvedScopeVersionId: v.id })).toBe(false);
+    // attested + null scope link → not final (dev report with no authority)
+    expect(isReportFinal({ status: "attested", scopeVersionId: null, approvedScopeVersionId: null })).toBe(false);
+  });
+});

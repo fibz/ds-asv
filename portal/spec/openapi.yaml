@@ -1458,11 +1458,16 @@ components:
           items: { $ref: '#/components/schemas/ScanTarget' }
     Report:
       type: object
+      description: >
+        A report is FINAL only when status is "attested" AND its scopeVersionId
+        is set AND equals the approved scope version id (the caller supplies
+        the approved id when evaluating finality).
       required: [id, scanId, status, summary, createdAt]
       properties:
         id: { type: string }
         scanId: { type: string }
         status: { type: string, enum: [draft, submitted, attested] }
+        scopeVersionId: { type: string, nullable: true }
         summary:
           type: object
           properties:

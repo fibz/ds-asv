@@ -3,6 +3,7 @@ import { setRlsContext, getAppMode } from "@/lib/tenant";
 import { recordAudit } from "@/lib/audit";
 import { listFindings } from "@/lib/scan/findings";
 import { resolveReportScopeVersionId } from "@/lib/scan/service";
+import { getScopeVersion } from "@/lib/scope/service";
 import type { TenantContext } from "@/lib/tenant";
 import type { Prisma, Report } from "@/lib/generated/prisma";
 
@@ -84,6 +85,18 @@ export async function attestReport(
     if (!report) return null;
     if (report.status !== "submitted") throw new ReportGuardError("only submitted reports can be attested");
     if (getAppMode() === "prod" && !ctx.isStaff) throw new ReportGuardError("attestation requires a staff reviewer in prod");
+    // Phase 5: in prod the attestation gate ALSO requires the report's linked
+    // scope version to exist and be approved — a dev-built report with no
+    // approved scope authority must never be finalized. (Dev/test: gate
+    // relaxed, per Global Constraints.)
+    if (getAppMode() === "prod") {
+      const scopeV = report.scopeVersionId
+        ? (await getScopeVersion(ctx, report.scopeVersionId))
+        : null;
+      if (!scopeV || scopeV.status !== "approved") {
+        throw new ReportGuardError("cannot attest: report has no approved scope version (required in prod)");
+      }
+    }
     await tx.reportAttestation.update({
       where: { id: report.attestation!.id },
       data: { status: "attested", reason: opts?.reason ?? null, reviewedAt: new Date() },
@@ -94,6 +107,18 @@ export async function attestReport(
   });
 }
 
-export function isReportFinal(report: { status: string }): boolean {
-  return report.status === "attested";
+export function isReportFinal(report: {
+  status: string;
+  scopeVersionId?: string | null;
+  approvedScopeVersionId?: string | null;
+}): boolean {
+  if (report.status !== "attested") return false;
+  // Legacy caller (Phase 3 semantics): the caller knows nothing about scope
+  // linkage. Attested alone is final. (Real Phase 3 rows carry scopeVersionId:
+  // null and no approvedScopeVersionId key.)
+  if (report.approvedScopeVersionId === undefined) return true;
+  // New-style caller: the report is final only if it recorded an approved
+  // scope version AND that recorded version is the approved one.
+  if (!report.scopeVersionId) return false;
+  return report.scopeVersionId === report.approvedScopeVersionId;
 }
