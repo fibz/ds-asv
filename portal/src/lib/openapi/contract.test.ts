@@ -75,3 +75,24 @@ describe("phase 3 scan contract", () => {
     }
   });
 });
+
+describe("phase 4 scope + authorization contract", () => {
+  const spec = loadSpec();
+  const paths = spec.paths ?? {};
+
+  it("documents scope set and version lifecycle", () => {
+    expect(paths["/scope-sets"].get).toBeDefined();
+    expect(paths["/scope-sets"].post).toBeDefined();
+    expect(paths["/scope-sets/{scopeSetId}/versions"].post).toBeDefined();
+    expect(paths["/scope-versions/{versionId}/submit"].post).toBeDefined();
+    expect(paths["/scope-versions/{versionId}/approve"].post).toBeDefined();
+    expect(paths["/scope-versions/{versionId}/authorization"].post).toBeDefined();
+  });
+
+  it("defines scope-domain schemas", () => {
+    const schemas = spec.components?.schemas ?? {};
+    for (const name of ["ScopeSet", "ScopeVersion", "ScopeItem", "Authorization", "AuthorizationIssued"]) {
+      expect(schemas[name], `missing schema ${name}`).toBeDefined();
+    }
+  });
+});
