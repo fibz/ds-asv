@@ -4,6 +4,21 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 export interface KeycloakUser {
   idpId: string;
   email: string;
+  roles: string[];
+}
+
+/**
+ * Pure claim → realm roles extractor. Never throws: an absent/malformed
+ * realm_access is "no roles", which the caller treats as not-staff.
+ */
+export function realmRoles(claims: Record<string, unknown>): string[] {
+  const ra = claims?.realm_access;
+  if (!ra || typeof ra !== "object" || Array.isArray(ra)) return [];
+  const roles = (ra as Record<string, unknown>).roles;
+  if (!Array.isArray(roles)) return [];
+  return roles
+    .filter((r): r is string => typeof r === "string")
+    .map((r) => r.toLowerCase());
 }
 
 /**
@@ -79,7 +94,7 @@ export async function getUserFromClaims(
   if (typeof email !== "string" || email.length === 0) {
     throw new Error("Keycloak token is missing the email claim");
   }
-  return { idpId: sub, email };
+  return { idpId: sub, email, roles: realmRoles(claims) };
 }
 
 /**
@@ -94,10 +109,10 @@ export async function getUserFromClaims(
 async function provisionUserFromClaims(
   claims: Record<string, unknown>
 ): Promise<KeycloakUser> {
-  const { idpId, email } = await getUserFromClaims(claims);
+  const { idpId, email, roles } = await getUserFromClaims(claims);
   try {
     const user = await prisma.user.create({ data: { idpId, email } });
-    return { idpId: user.idpId, email: user.email };
+    return { idpId: user.idpId, email: user.email, roles };
   } catch (error) {
     const existing = await prisma.user.findUnique({ where: { idpId } });
     if (!existing) {
@@ -105,7 +120,7 @@ async function provisionUserFromClaims(
         cause: error,
       });
     }
-    return { idpId: existing.idpId, email: existing.email };
+    return { idpId: existing.idpId, email: existing.email, roles };
   }
 }
 

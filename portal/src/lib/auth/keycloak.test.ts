@@ -51,7 +51,7 @@ describe("keycloak auth", () => {
 
   it("extracts idpId + email from a valid token's claims", async () => {
     const user = await getUserFromClaims(CLAIMS);
-    expect(user).toEqual({ idpId: "kc-user-99", email: "c@d.com" });
+    expect(user).toEqual({ idpId: "kc-user-99", email: "c@d.com", roles: [] });
   });
 
   it("rejects claims without a subject", async () => {
@@ -110,7 +110,7 @@ describe("keycloak auth", () => {
     } as never);
 
     const user = await provisionUserFromToken("a.b.c");
-    expect(user).toEqual({ idpId: "kc-user-99", email: "c@d.com" });
+    expect(user).toEqual({ idpId: "kc-user-99", email: "c@d.com", roles: [] });
     expect(prisma.user.create).toHaveBeenCalledWith({
       data: { idpId: "kc-user-99", email: "c@d.com" },
     });
@@ -136,7 +136,7 @@ describe("keycloak auth", () => {
     } as never);
 
     const user = await provisionUserFromToken("a.b.c");
-    expect(user).toEqual({ idpId: "kc-user-99", email: "existing@example.com" });
+    expect(user).toEqual({ idpId: "kc-user-99", email: "existing@example.com", roles: [] });
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { idpId: "kc-user-99" },
     });
@@ -160,7 +160,7 @@ describe("keycloak auth", () => {
     const user = await provisionKeycloakUser(
       fakeRequest("Bearer a.b.c") as never
     );
-    expect(user).toEqual({ idpId: "kc-user-99", email: "c@d.com" });
+    expect(user).toEqual({ idpId: "kc-user-99", email: "c@d.com", roles: [] });
     expect(prisma.user.create).toHaveBeenCalledWith({
       data: { idpId: "kc-user-99", email: "c@d.com" },
     });
@@ -188,7 +188,7 @@ describe("keycloak auth", () => {
     const user = await getKeycloakUser(
       fakeRequest("Bearer a.b.c") as never
     );
-    expect(user).toEqual({ idpId: "kc-user-99", email: "c@d.com" });
+    expect(user).toEqual({ idpId: "kc-user-99", email: "c@d.com", roles: [] });
   });
 
   it("returns null when no Authorization header is present", async () => {
@@ -208,5 +208,55 @@ describe("keycloak auth", () => {
     await expect(
       getKeycloakUser(fakeRequest("Bearer bad.token") as never)
     ).resolves.toBeNull();
+  });
+});
+
+describe("realm roles claim", () => {
+  beforeEach(() => {
+    vi.stubEnv("KEYCLOAK_ISSUER", ISSUER);
+    vi.stubEnv("KEYCLOAK_CLIENT_ID", CLIENT_ID);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it("parses realm_access.roles (lowercased) from verified claims", async () => {
+    const { realmRoles } = await import("@/lib/auth/keycloak");
+    const claims = {
+      sub: "u1",
+      email: "a@x.com",
+      realm_access: { roles: ["asv-staff", "offline_access"] },
+    };
+    expect(realmRoles(claims)).toEqual(["asv-staff", "offline_access"]);
+  });
+
+  it("returns [] when realm_access is absent, empty, or malformed (never throws)", async () => {
+    const { realmRoles } = await import("@/lib/auth/keycloak");
+    expect(realmRoles({ sub: "u1", email: "a@x.com" })).toEqual([]);
+    expect(realmRoles({ realm_access: null })).toEqual([]);
+    expect(realmRoles({ realm_access: { roles: "not-an-array" } })).toEqual([]);
+  });
+
+  it("KeycloakUser carries roles from provisionUserFromClaims", async () => {
+    const claimRoles = ["asv-staff", "offline_access"];
+    vi.mocked(jwtVerify).mockResolvedValueOnce({
+      payload: { ...CLAIMS, realm_access: { roles: claimRoles } },
+      protectedHeader: {},
+    } as never);
+    vi.mocked(prisma.user.create).mockResolvedValueOnce({
+      id: "u1",
+      idpId: "kc-user-99",
+      email: "c@d.com",
+      orgId: null,
+      role: "member",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as never);
+
+    const user = await provisionUserFromToken("a.b.c");
+    expect(user.roles).toEqual(claimRoles);
+    expect(user).toMatchObject({ idpId: "kc-user-99", email: "c@d.com" });
   });
 });
