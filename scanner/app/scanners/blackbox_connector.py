@@ -14,8 +14,10 @@ from __future__ import annotations
 import ipaddress
 import json
 import logging
+import os
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -252,11 +254,18 @@ class BlackBoxScanner:
 
     def _run_testssl(self, target: str, port: Optional[int]) -> Optional[Dict]:
         endpoint = target if port is None else "{0}:{1}".format(target, port)
+        # testssl.sh 3.x writes pretty JSON to a FILE (--jsonfile-pretty),
+        # not stdout — point it at a temp file and parse that back. The
+        # stdout run log is discarded (capture_output keeps it off the
+        # console). Verified against testssl.sh 3.2.4 on this host.
+        fd, json_path = tempfile.mkstemp(suffix=".json", prefix="testssl-")
+        os.close(fd)
         try:
-            proc = subprocess.run(
+            subprocess.run(
                 [
                     "testssl.sh",
-                    "--json-pretty",
+                    "--jsonfile-pretty",
+                    json_path,
                     "--warnings",
                     "off",
                     "--quiet",
@@ -272,10 +281,16 @@ class BlackBoxScanner:
             return None
 
         try:
-            doc = json.loads(proc.stdout)
-        except (ValueError, TypeError):
+            with open(json_path, encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (ValueError, TypeError, OSError):
             logger.warning("testssl.sh produced unparseable JSON for %s", endpoint)
             return None
+        finally:
+            try:
+                os.remove(json_path)
+            except OSError:
+                pass
 
         return _parse_testssl(doc)
 
@@ -283,11 +298,13 @@ class BlackBoxScanner:
 def _parse_testssl(doc: object) -> Optional[Dict]:
     """Extract ``tls_version`` and ``cipher_strength`` from a testssl JSON doc.
 
-    testssl.sh ``--json-pretty`` emits a list of finding objects, each with an
-    ``id`` and a ``finding`` string. We normalise the relevant ids into the
-    fields the scoring engine consumes. The parser is deliberately tolerant of
-    the fixture format used in unit tests (objects with explicit ``id`` keys
-    such as ``tls_version`` / ``cipher_strength``).
+    testssl.sh 3.x ``--jsonfile-pretty`` emits one big ``scanResult`` object
+    whose sections (``protocols``, ``rating``, ...) carry the findings; older/
+    fixture shapes are flat lists of id-keyed finding objects. We normalise
+    both into the fields the scoring engine consumes. ``tls_version`` is the
+    worst OFFERED protocol (a forbidden one wins — see
+    ``PCIRules.FORBIDDEN_TLS_PROTOCOLS``), else the highest TLS version
+    offered; gradients keep the fallback fixture shape working.
     """
     if isinstance(doc, dict):
         entries = doc.get("scanResult", doc.get("findings", [doc]))
@@ -308,9 +325,73 @@ def _parse_testssl(doc: object) -> Optional[Dict]:
         raw.append(entry)
         eid = entry.get("id", "")
         finding = entry.get("finding", "")
-        if eid == "tls_version" or eid.startswith("protocols"):
-            tls_version = str(entry.get("version") or finding).strip()
-        elif eid == "cipher_strength" or eid.startswith("cipher"):
-            cipher_strength = str(entry.get("score") or finding).strip()
+        # testssl 3.x section shape: the scanResult object carries the
+        # protocols / rating sections directly.
+        if "protocols" in entry:
+            tls_version = _tls_version_from_protocols(entry.get("protocols"))
+        if "rating" in entry:
+            grade = _grade_from_rating(entry.get("rating"))
+            if grade:
+                cipher_strength = grade
+        # Legacy/flat shape (id-keyed finding objects). Only overwrite when a
+        # non-empty value was extracted.
+        legacy_tls = str(entry.get("version") or finding).strip()
+        if (eid == "tls_version" or eid.startswith("protocols")) and legacy_tls:
+            tls_version = legacy_tls
+        legacy_cipher = str(entry.get("score") or finding).strip()
+        if (eid == "cipher_strength" or eid.startswith("cipher")) and legacy_cipher:
+            cipher_strength = legacy_cipher
 
     return {"tls_version": tls_version, "cipher_strength": cipher_strength, "raw": raw}
+
+
+# testssl protocol ids → the strings PCIRules.FORBIDDEN_TLS_PROTOCOLS matches
+# exactly (testssl reports the TLS 1.0 family as "TLS1").
+_TLS_PROTOCOL_NAME = {
+    "TLS1": "TLSv1.0",
+    "TLS1_0": "TLSv1.0",
+    "TLS1_1": "TLSv1.1",
+    "TLS1_2": "TLSv1.2",
+    "TLS1_3": "TLSv1.3",
+}
+_FORBIDDEN_TLS_ORDER = ("SSLv2", "SSLv3", "TLSv1.0", "TLSv1.1")
+
+
+def _tls_version_from_protocols(protocols: object) -> str:
+    """Worst OFFERED protocol from a testssl ``protocols`` section.
+
+    A forbidden protocol that is offered must be REPORTED (so the PCI rule
+    fires); when none is, report the highest TLS version offered. Anything
+    else, or absent, is "unknown" — never a fabricated value.
+    """
+    if not isinstance(protocols, list):
+        return "unknown"
+    offered: List[str] = []
+    for proto in protocols:
+        if not isinstance(proto, dict):
+            continue
+        pid = proto.get("id", "")
+        finding = str(proto.get("finding", ""))
+        if not finding.startswith("offered"):
+            continue
+        offered.append(_TLS_PROTOCOL_NAME.get(pid, pid))
+    if not offered:
+        return "unknown"
+    for bad in _FORBIDDEN_TLS_ORDER:
+        if bad in offered:
+            return bad
+    for high in ("TLSv1.3", "TLSv1.2", "TLSv1.1", "TLSv1.0"):
+        if high in offered:
+            return high
+    return offered[-1]
+
+
+def _grade_from_rating(rating: object) -> str:
+    """testssl's overall SSL rating grade ("A", "T", ...) from the rating
+    section — the closest factual analogue of the old ``cipher_strength``."""
+    if not isinstance(rating, list):
+        return ""
+    for entry in rating:
+        if isinstance(entry, dict) and entry.get("id") == "overall_grade":
+            return str(entry.get("finding", "")).strip()
+    return ""

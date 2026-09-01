@@ -17,13 +17,14 @@
 - **Runnability status (verified 2026-09-01/02, fresh checks):**
   - ✅ Portal backend + API (Phases 1–6) — done, 349/349 portal tests green
   - ✅ Portal UI: assets, scope, scanners, reports (Phase 5) — done, live dashboard pages
-  - ✅ Scanner executor + manifest flow (Phase 3b) — done, 20/20 scanner pytest green (in `scanner/.venv`)
-  - ❌ Scanner real-scan tooling on this host — nmap binary 7.98 installed, but `python-nmap` module absent + `testssl.sh` absent (network to pypi/testssl.sh OK)
+  - ✅ Scanner executor + manifest flow (Phase 3b) — done, 27/27 scanner pytest green (scanner/.venv; make lint clean)
+  - ✅ Scanner real-scan tooling on this host — nmap 7.98 (system) + python-nmap 0.7.1 (scanner/.venv) + testssl.sh 3.2.4 (scanner/scripts/testssl.sh-3.2.4, on PATH via a `.venv/bin` symlink; dir gitignored); real black-box smoke vs 127.0.0.1:8443 = COMPLETED with nmap banner + testssl.sh TLS grading parsed into tls_version/cipher_strength
   - ✅ Prod staff attestation — `KeycloakUser.roles` from the realm-role claim + `tenantContextFromRequest` `isStaff` overlay (Phase 6); reports can reach FINAL in prod for staff, fail-closed for everyone else
   - ❌ Real CVE data — scanner scoring uses the demo table (`cpe_mapper._demo_lookup`: openssl/openssh/nginx only); Phase 5b NVD-mirror spec exists but is not implemented
   - ❌ Keycloak running for real logins — auth works in dev/test (portal `.env` has placeholder issuer); no Keycloak container/process on host
   - ❌ Greenbone/VulDB integration — `CVESource` interface is the planned checkpoint (design docs), not built
-- **NEXT:** scanner real-scan tooling on this host (install `python-nmap` into `scanner/.venv`, install `testssl.sh` into `scanner/scripts/`, smoke-test a real black-box scan vs `127.0.0.1`, re-run scanner pytest). Then: the real CVE source — a `GreenboneSource` adapter (CVESource checkpoint) once the user's Greenbone install + DB are up.
+- Next candidates after the tooling install: the scanner's `make test-integration` gate is PRE-EXISTING broken — `tests/fixtures/docker-compose.yml` + `tests/integration/` are missing (never tracked in this repo state; likely lost with the reference-dump removal) — restore fixtures or make the target skip when absent.
+- **NEXT:** the real CVE source — a `GreenboneSource` adapter (CVESource checkpoint) once the user's Greenbone install + DB are up.
 - **CVE source decision (user 2026-09-02):** user installs Greenbone themselves — Greenbone Community Edition ships CERT + SCAP + GVMD_DATA feeds, so it can be the real CVE source via a `GreenboneSource` adapter (CVESource checkpoint). NVD self-hosted mirror spec (`docs/superpowers/specs/2026-09-02-phase5b-nvd-mirror-design.md`, committed `98b2883`, NOT pushed) is the optional offline/backup path — build it only if Greenbone is not the route.
 
 ## Environment notes

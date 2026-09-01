@@ -54,3 +54,6 @@ scanner/prisma/generated/
 
 # worktree symlink to shared node_modules
 portal/node_modules
+
+# Host-local scanner tooling (installed per AGENTS.md, not committed)
+scanner/scripts/testssl.sh-*/

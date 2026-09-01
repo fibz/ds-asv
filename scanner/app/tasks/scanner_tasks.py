@@ -343,10 +343,13 @@ def run_blackbox_scan(scan_id: str, target_id: str) -> dict:
         except ValueError:
             target_is_ip = False
         final_individual_ip = not target.port and target_is_ip
+        # 600s: testssl.sh's full profile routinely exceeds 180s per endpoint
+        # (measured ~228s against 127.0.0.1 with testssl.sh 3.2.4); the old
+        # 180s budget silently killed TLS grading on slow targets.
         scanner = BlackBoxScanner(
             hostname,
             ports=ports,
-            timeout=180,
+            timeout=600,
             final_individual_ip=final_individual_ip,
         )
         result: ScanResult = scanner.run()
