@@ -34,6 +34,16 @@ describe("rbac", () => {
     expect(can(sec, "api-key.manage")).toBe(true);
     expect(can(viewer, "api-key.manage")).toBe(false);
   });
+  it("authorization.issue requires owner or security_admin in prod", () => {
+    const owner = { ...base, role: "organization_owner" as const };
+    const sec = { ...base, role: "security_admin" as const };
+    const mgr = { ...base, role: "asset_manager" as const };
+    const viewer = { ...base, role: "report_viewer" as const };
+    expect(can(owner, "authorization.issue")).toBe(true);
+    expect(can(sec, "authorization.issue")).toBe(true);
+    expect(can(mgr, "authorization.issue")).toBe(false);
+    expect(can(viewer, "authorization.issue")).toBe(false);
+  });
 });
 
 describe("user center actions", () => {
