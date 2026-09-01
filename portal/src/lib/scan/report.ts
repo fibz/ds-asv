@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma-client";
 import { setRlsContext, getAppMode } from "@/lib/tenant";
 import { recordAudit } from "@/lib/audit";
 import { listFindings } from "@/lib/scan/findings";
+import { resolveReportScopeVersionId } from "@/lib/scan/service";
 import type { TenantContext } from "@/lib/tenant";
 import type { Prisma, Report } from "@/lib/generated/prisma";
 
@@ -38,9 +39,16 @@ export async function buildReport(ctx: TenantContext, scanId: string): Promise<R
       compliance: hasCritical ? "FAILED" : "PASSED",
     };
     const existing = await tx.report.findUnique({ where: { scanId } });
+    // Phase 5: record the approved scope version that authorizes this scan's
+    // scope. Resolved at generation time; on update only when the report has
+    // no link yet — never re-point an already-linked (possibly approved) report.
+    const scopeVersionId = await resolveReportScopeVersionId(ctx, scanId);
     const report = existing
-      ? await tx.report.update({ where: { id: existing.id }, data: { summary: summary as unknown as Prisma.InputJsonValue } })
-      : await tx.report.create({ data: { scanId, organizationId: ctx.organizationId, status: "draft", summary: summary as unknown as Prisma.InputJsonValue } });
+      ? await tx.report.update({
+          where: { id: existing.id },
+          data: { summary: summary as unknown as Prisma.InputJsonValue, ...(existing.scopeVersionId == null ? { scopeVersionId } : {}) },
+        })
+      : await tx.report.create({ data: { scanId, organizationId: ctx.organizationId, status: "draft", summary: summary as unknown as Prisma.InputJsonValue, scopeVersionId } });
     await recordAudit(ctx, "report.generated", "Report", report.id, undefined, summary, undefined, tx);
     return report;
   });

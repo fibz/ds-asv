@@ -144,3 +144,88 @@ describe("QA attestation gate", () => {
     expect(isReportFinal(attested!)).toBe(true);
   });
 });
+
+describe("report scope linkage (Phase 5)", () => {
+  // Self-contained harness (scanId is not file-scope in this file — each
+  // describe seeds its own scan). Runs under the file's dev env (no
+  // APP_MODE stub in effect here — the QA describe's afterAll unstubbed it),
+  // so createScanFromAssets does not trip the prod scope gate.
+  let scanId = "";
+  let linkedAssetId = "";
+  beforeAll(async () => {
+    await adminWipe();
+    await withTenant(ORG, (tx) => tx.organization.create({ data: { id: ORG, name: "Report Org" } }));
+    await withTenant(ORG, (tx) => tx.user.create({ data: { id: USER, idpId: "kc-report", email: "r@x.com" } }));
+    linkedAssetId = (await withTenant(ORG, (tx) => tx.asset.create({ data: { id: "asset_report_link", organizationId: ORG, type: "ipv4", canonicalIdentifier: "10.3.3.9", lifecycleState: "active", verificationState: "verified" } }))).id;
+    scanId = (await createScanFromAssets({ ...ctx, role: "scan_operator" }, { name: "linkage scan", assetIds: [linkedAssetId] })).id;
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, scanId, "RUNNING");
+    await ingestFindings({ ...ctx, role: "scan_operator" }, scanId, [
+      { assetId: linkedAssetId, qid: "q1", severity: "4", pciSeverity: "High", title: "TLS weak" },
+    ]);
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, scanId, "COMPLETED");
+  });
+  afterAll(async () => { await adminWipe(); await prisma.$disconnect(); });
+
+  it("resolveReportScopeVersionId returns the latest approved scope version containing a target", async () => {
+    const { resolveReportScopeVersionId } = await import("@/lib/scan/service");
+    const { createScopeSet, createScopeVersion, submitScopeVersion, approveScopeVersion } = await import("@/lib/scope/service");
+    // linkedAssetId is already scanned but in NO approved scope version yet
+    const set = await createScopeSet(ctx, { name: "Scope-Linked" });
+    const v1 = await createScopeVersion(ctx, set.id, { assetIds: [linkedAssetId] });
+    await submitScopeVersion(ctx, v1.id);
+    await approveScopeVersion(ctx, v1.id);
+    expect(await resolveReportScopeVersionId(ctx, scanId)).toBe(v1.id);
+    // a second, later approved version supersedes it
+    const v2 = await createScopeVersion(ctx, set.id, { assetIds: [linkedAssetId] });
+    await submitScopeVersion(ctx, v2.id);
+    await approveScopeVersion(ctx, v2.id);
+    expect(await resolveReportScopeVersionId(ctx, scanId)).toBe(v2.id);
+    // an approved version in another set also resolves (latest approved per set)
+    const otherSet = await createScopeSet(ctx, { name: "Scope-Other" });
+    const ov1 = await createScopeVersion(ctx, otherSet.id, { assetIds: [linkedAssetId] });
+    await submitScopeVersion(ctx, ov1.id);
+    await approveScopeVersion(ctx, ov1.id);
+    expect(await resolveReportScopeVersionId(ctx, scanId)).toBeTruthy();
+    // a draft version never resolves
+    const emptySet = await createScopeSet(ctx, { name: "Empty" });
+    await createScopeVersion(ctx, emptySet.id, { assetIds: [linkedAssetId] }); // stays draft
+    expect(await resolveReportScopeVersionId(ctx, scanId)).toBeTruthy(); // still resolves via the approved ones
+  });
+
+  it("resolveReportScopeVersionId is null for a scan with no approved coverage", async () => {
+    const { resolveReportScopeVersionId } = await import("@/lib/scan/service");
+    const orphanAssetId = (await withTenant(ORG, (tx) => tx.asset.create({ data: { id: "asset_report_orphan", organizationId: ORG, type: "ipv4", canonicalIdentifier: "10.3.3.10", lifecycleState: "active", verificationState: "verified" } }))).id;
+    const orphanScanId = (await createScanFromAssets({ ...ctx, role: "scan_operator" }, { name: "orphan scan", assetIds: [orphanAssetId] })).id;
+    expect(await resolveReportScopeVersionId(ctx, orphanScanId)).toBeNull();
+  });
+
+  it("buildReport records the approved scope version on create and never re-points an existing link", async () => {
+    const { resolveReportScopeVersionId } = await import("@/lib/scan/service");
+    const { createScopeSet, createScopeVersion, submitScopeVersion, approveScopeVersion } = await import("@/lib/scope/service");
+    // prior test left Scope-Linked v2 (approved, latest per set) covering linkedAssetId
+    const expected = await resolveReportScopeVersionId(ctx, scanId);
+    expect(expected).toBeTruthy();
+    const report = await buildReport(ctx, scanId);
+    expect(report.scopeVersionId).toBe(expected);
+    // a NEWER approved version in another set exists now; refresh must not re-point
+    const set2 = await createScopeSet(ctx, { name: "Scope-Newer" });
+    const nv1 = await createScopeVersion(ctx, set2.id, { assetIds: [linkedAssetId] });
+    await submitScopeVersion(ctx, nv1.id);
+    await approveScopeVersion(ctx, nv1.id);
+    const refreshed = await buildReport(ctx, scanId);
+    expect(refreshed.id).toBe(report.id); // upsert by scanId
+    expect(refreshed.scopeVersionId).toBe(report.scopeVersionId); // link frozen at first resolution
+  });
+
+  it("buildReport leaves the link null for a dev-built report with no approved coverage", async () => {
+    const orphanAssetId = (await withTenant(ORG, (tx) => tx.asset.create({ data: { id: "asset_report_orphan2", organizationId: ORG, type: "ipv4", canonicalIdentifier: "10.3.3.11", lifecycleState: "active", verificationState: "verified" } }))).id;
+    const orphanScanId = (await createScanFromAssets({ ...ctx, role: "scan_operator" }, { name: "orphan scan 2", assetIds: [orphanAssetId] })).id;
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, orphanScanId, "RUNNING");
+    await ingestFindings({ ...ctx, role: "scan_operator" }, orphanScanId, [
+      { assetId: orphanAssetId, qid: "q9", severity: "1", pciSeverity: "Low", title: "Minor" },
+    ]);
+    await transitionScanStatus({ ...ctx, role: "scan_operator" }, orphanScanId, "COMPLETED");
+    const report = await buildReport(ctx, orphanScanId);
+    expect(report.scopeVersionId).toBeNull();
+  });
+});

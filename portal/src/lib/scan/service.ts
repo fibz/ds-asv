@@ -86,3 +86,31 @@ export async function transitionScanStatus(
     return updated;
   });
 }
+
+/**
+ * Phase 5: returns the id of the LATEST approved scope version (per scope set)
+ * whose items contain any asset targeted by the given scan. A scan's report
+ * links to this approved scope version as the documentation-signed authority
+ * behind its scope. Returns null when no approved scope version covers the
+ * scan's targets (e.g. dev-built scans).
+ */
+export async function resolveReportScopeVersionId(ctx: TenantContext, scanId: string): Promise<string | null> {
+  return withTenant(ctx.organizationId, async (tx) => {
+    const targets = await tx.scanTarget.findMany({ where: { scanId, organizationId: ctx.organizationId } });
+    if (targets.length === 0) return null;
+    const assetIds = targets.map((t) => t.assetId);
+    const approved = await tx.scopeVersion.findMany({
+      where: { organizationId: ctx.organizationId, status: "approved" },
+      orderBy: [{ scopeSetId: "asc" }, { versionNumber: "desc" }],
+      include: { items: { where: { assetId: { in: assetIds } } } },
+    });
+    // latest approved version per scope set
+    const seen = new Set<string>();
+    for (const v of approved) {
+      if (seen.has(v.scopeSetId)) continue;
+      seen.add(v.scopeSetId);
+      if (v.items.length > 0) return v.id;
+    }
+    return null;
+  });
+}
