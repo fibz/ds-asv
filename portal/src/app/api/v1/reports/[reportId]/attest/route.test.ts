@@ -13,6 +13,7 @@ vi.mock("@/lib/prisma-client", () => {
     session: { findUnique: vi.fn(), findFirst: vi.fn(), upsert: vi.fn(), update: vi.fn(), findMany: vi.fn() },
     report: { findUnique: vi.fn(), update: vi.fn() },
     reportAttestation: { create: vi.fn(), update: vi.fn() },
+    scopeVersion: { findUnique: vi.fn() },
     auditEvent: { create: vi.fn() },
     $executeRawUnsafe: vi.fn(),
   };
@@ -20,6 +21,7 @@ vi.mock("@/lib/prisma-client", () => {
 });
 
 const CLAIMS = { sub: "kc-attest", email: "att@x.com" };
+const STAFF_CLAIMS = { ...CLAIMS, realm_access: { roles: ["asv-staff"] } };
 const REPORT_ID = "report_attest_route";
 const ORG = "org_1";
 const USER = "u1";
@@ -41,10 +43,10 @@ function req(path: string, method: string, body?: unknown) {
   });
 }
 
-function setupUser(role: string) {
-  vi.mocked(jwtVerify).mockResolvedValue({ payload: CLAIMS, protectedHeader: {} } as never);
-  vi.mocked(prisma.user.create).mockResolvedValue({ id: USER, idpId: CLAIMS.sub, email: CLAIMS.email } as never);
-  vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: USER, idpId: CLAIMS.sub, email: CLAIMS.email } as never);
+function setupUser(role: string, claims: Record<string, unknown> = CLAIMS) {
+  vi.mocked(jwtVerify).mockResolvedValue({ payload: claims, protectedHeader: {} } as never);
+  vi.mocked(prisma.user.create).mockResolvedValue({ id: USER, idpId: claims.sub as string, email: claims.email as string } as never);
+  vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: USER, idpId: claims.sub as string, email: claims.email as string } as never);
   vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValue({ userId: USER, organizationId: ORG, role, status: "active" } as never);
   vi.mocked(prisma.session.findFirst).mockResolvedValue(null as never);
   vi.mocked(prisma.session.upsert).mockResolvedValue({ id: "s1" } as never);
@@ -101,5 +103,47 @@ describe("report attest route", () => {
     const res = await POST(req(`/api/v1/reports/${REPORT_ID}/attest`, "POST", { status: "attested", reason: "QA ok" }), { params: Promise.resolve({ reportId: REPORT_ID }) });
     expect(res.status).toBe(200);
     expect((await res.json()).status).toBe("attested");
+  });
+
+  // Phase 6: the REAL tenantContextFromRequest overlay runs here (jose is
+  // mocked, prisma is mocked, but tenant.ts is not) — a staff realm-role
+  // claim must reach the prod attest gate as isStaff=true.
+  it("POST 200 attest under prod for a staff realm-role claim (isStaff via realm_access)", async () => {
+    vi.stubEnv("APP_MODE", "prod");
+    setupUser("report_viewer", STAFF_CLAIMS);
+    const submitted = reportRow({
+      status: "submitted",
+      attestationId: "att1",
+      scopeVersionId: "sv1",
+      attestation: attestationRow(),
+    });
+    vi.mocked(prisma.report.findUnique).mockResolvedValue(submitted as never);
+    // prod gate also requires the linked scope version to be approved
+    vi.mocked(prisma.scopeVersion.findUnique).mockResolvedValue({
+      id: "sv1", scopeSetId: "ss1", organizationId: ORG, versionNumber: 1,
+      status: "approved", contentHash: null, submittedById: null, submittedAt: null,
+      approvedById: null, approvedAt: null, createdAt: new Date(), updatedAt: new Date(),
+      items: [],
+    } as never);
+    vi.mocked(prisma.reportAttestation.update).mockResolvedValue({ ...attestationRow(), status: "attested" } as never);
+    vi.mocked(prisma.report.update).mockResolvedValue(reportRow({ status: "attested" }) as never);
+    const res = await POST(req(`/api/v1/reports/${REPORT_ID}/attest`, "POST", { status: "attested", reason: "QA ok" }), { params: Promise.resolve({ reportId: REPORT_ID }) });
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe("attested");
+  });
+
+  it("POST 409 under prod for a non-staff claim (fail-closed staff gate)", async () => {
+    vi.stubEnv("APP_MODE", "prod");
+    setupUser("report_viewer"); // no realm_access claim → roles [] → not staff
+    const submitted = reportRow({
+      status: "submitted",
+      attestationId: "att1",
+      scopeVersionId: "sv1",
+      attestation: attestationRow(),
+    });
+    vi.mocked(prisma.report.findUnique).mockResolvedValue(submitted as never);
+    const res = await POST(req(`/api/v1/reports/${REPORT_ID}/attest`, "POST", { status: "attested", reason: "QA ok" }), { params: Promise.resolve({ reportId: REPORT_ID }) });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe("attestation requires a staff reviewer in prod");
   });
 });
