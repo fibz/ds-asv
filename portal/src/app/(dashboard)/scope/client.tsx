@@ -48,6 +48,10 @@ async function errorMessage(res: Response, fallback: string): Promise<string> {
   return body?.error ?? fallback;
 }
 
+function failureMessage(e: unknown, fallback: string): string {
+  return e instanceof Error && e.message ? e.message : fallback;
+}
+
 export function ScopeClient({
   scopeSets,
   assets,
@@ -65,9 +69,11 @@ export function ScopeClient({
 
   // Per-set "New version" asset picker
   const [picks, setPicks] = useState<Record<string, string[]>>({});
+  const [creatingVersion, setCreatingVersion] = useState<Record<string, boolean>>({});
   const [versionErrors, setVersionErrors] = useState<Record<string, string>>({});
 
-  // Per-version submit/approve errors (RBAC/lifecycle failures surface here)
+  // Per-version submit/approve in-flight + errors (RBAC/lifecycle/network failures surface here)
+  const [transitioning, setTransitioning] = useState<Record<string, boolean>>({});
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
 
   // Only active assets are valid picks (the API rejects retired/other states downstream).
@@ -90,6 +96,8 @@ export function ScopeClient({
       } else {
         setCreateSetError(await errorMessage(res, "Creating scope set failed"));
       }
+    } catch (e) {
+      setCreateSetError(failureMessage(e, "Creating scope set failed"));
     } finally {
       setCreatingSet(false);
     }
@@ -110,35 +118,49 @@ export function ScopeClient({
   async function createVersion(scopeSetId: string) {
     const assetIds = picks[scopeSetId] ?? [];
     if (assetIds.length === 0) return;
+    setCreatingVersion((prev) => ({ ...prev, [scopeSetId]: true }));
     setVersionErrors((prev) => ({ ...prev, [scopeSetId]: "" }));
-    const res = await fetch(`/api/v1/scope-sets/${scopeSetId}/versions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assetIds }),
-    });
-    if (res.ok) {
-      setPicks((prev) => ({ ...prev, [scopeSetId]: [] }));
-      router.refresh();
-    } else {
-      const msg = await errorMessage(res, "Creating version failed");
-      setVersionErrors((prev) => ({ ...prev, [scopeSetId]: msg }));
+    try {
+      const res = await fetch(`/api/v1/scope-sets/${scopeSetId}/versions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assetIds }),
+      });
+      if (res.ok) {
+        setPicks((prev) => ({ ...prev, [scopeSetId]: [] }));
+        router.refresh();
+      } else {
+        const msg = await errorMessage(res, "Creating version failed");
+        setVersionErrors((prev) => ({ ...prev, [scopeSetId]: msg }));
+      }
+    } catch (e) {
+      setVersionErrors((prev) => ({ ...prev, [scopeSetId]: failureMessage(e, "Creating version failed") }));
+    } finally {
+      setCreatingVersion((prev) => ({ ...prev, [scopeSetId]: false }));
     }
   }
 
   async function transition(versionId: string, route: "submit" | "approve") {
+    setTransitioning((prev) => ({ ...prev, [versionId]: true }));
     setActionErrors((prev) => ({ ...prev, [versionId]: "" }));
-    const res = await fetch(`/api/v1/scope-versions/${versionId}/${route}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    });
-    if (res.ok) {
-      router.refresh();
-    } else {
-      const msg = await errorMessage(res, route === "submit" ? "Submit failed" : "Approve failed");
+    try {
+      const res = await fetch(`/api/v1/scope-versions/${versionId}/${route}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        router.refresh();
+      } else {
+        const msg = await errorMessage(res, route === "submit" ? "Submit failed" : "Approve failed");
+        setActionErrors((prev) => ({ ...prev, [versionId]: msg }));
+      }
+    } catch (e) {
       setActionErrors((prev) => ({
         ...prev,
-        [versionId]: msg,
+        [versionId]: failureMessage(e, route === "submit" ? "Submit failed" : "Approve failed"),
       }));
+    } finally {
+      setTransitioning((prev) => ({ ...prev, [versionId]: false }));
     }
   }
 
@@ -220,6 +242,7 @@ export function ScopeClient({
                           {v.status === "draft" && (
                             <button
                               onClick={() => transition(v.id, "submit")}
+                              disabled={Boolean(transitioning[v.id])}
                               className="px-3 py-1.5 bg-indigo-600 text-white rounded-md text-sm disabled:opacity-50"
                             >
                               Submit
@@ -228,6 +251,7 @@ export function ScopeClient({
                           {v.status === "submitted" && (
                             <button
                               onClick={() => transition(v.id, "approve")}
+                              disabled={Boolean(transitioning[v.id])}
                               className="px-3 py-1.5 bg-indigo-600 text-white rounded-md text-sm disabled:opacity-50"
                             >
                               Approve
@@ -294,7 +318,7 @@ export function ScopeClient({
                     <div className="mt-3 flex items-center gap-3">
                       <button
                         onClick={() => createVersion(set.id)}
-                        disabled={selected.length === 0}
+                        disabled={selected.length === 0 || Boolean(creatingVersion[set.id])}
                         className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium disabled:opacity-50"
                       >
                         Create version ({selected.length})
