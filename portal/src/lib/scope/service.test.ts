@@ -49,6 +49,14 @@ async function seed() {
       // containing asset_scope_1, so the gate test's pre-approval `false`
       // assertion needs its own asset (shared approved state would make it true).
       { id: "asset_scope_3", org: ORG, type: "ipv4", ci: "10.1.1.3" },
+      // asset_scope_4 is reserved for the supersession test: asset_scope_1 is
+      // already approved inside "Gate Scope" by the earlier submit/approve
+      // test, so the "removed from latest → out of scope" assertion needs a
+      // fresh asset no other test ever approves.
+      { id: "asset_scope_4", org: ORG, type: "ipv4", ci: "10.1.1.4" },
+      // ORG2 asset for the cross-org exact-set guard test: an id belonging to
+      // another org must be rejected by createScopeVersion up front.
+      { id: "asset_scope_foreign", org: ORG2, type: "ipv4", ci: "10.2.1.1" },
     ]) {
       await pg.query(
         `INSERT INTO "Asset" (id,"organizationId",type,"canonicalIdentifier","lifecycleState","verificationState","updatedAt") VALUES ($1,$2,$3,$4,'active','verified',now())`,
@@ -108,6 +116,13 @@ describe("scope service", () => {
     expect(ids).not.toContain("asset_scope_2");
   });
 
+  it("rejects asset ids from another organization (exact-set guard)", async () => {
+    const set = await createScopeSet(ctxA, { name: "Guarded" });
+    // asset_scope_foreign belongs to ORG2 — outside org A's row set, so the
+    // exact-set guard must reject rather than snapshot a partial/foreign set.
+    await expect(createScopeVersion(ctxA, set.id, { assetIds: ["asset_scope_1", "asset_scope_foreign"] })).rejects.toThrowError(ScopeGuardError);
+  });
+
   it("submits and approves, freezing the version; gates transitions", async () => {
     const set = await createScopeSet(ctxA, { name: "Gate Scope" });
     const version = await createScopeVersion(ctxA, set.id, { assetIds: ["asset_scope_1"] });
@@ -130,6 +145,25 @@ describe("scope service", () => {
     await submitScopeVersion(ctxA, version.id);
     await approveScopeVersion(ctxA, version.id);
     expect(await assetInApprovedScope(ctxA, "asset_scope_3")).toBe(true);
+    expect(await assetInApprovedScope(ctxB, "asset_scope_3")).toBe(false);
+  });
+
+  it("assetInApprovedScope uses the latest approved version per scope set (supersession)", async () => {
+    const set = await createScopeSet(ctxA, { name: "Superseding" });
+    const v1 = await createScopeVersion(ctxA, set.id, { assetIds: ["asset_scope_4", "asset_scope_3"] });
+    await submitScopeVersion(ctxA, v1.id);
+    await approveScopeVersion(ctxA, v1.id);
+    expect(await assetInApprovedScope(ctxA, "asset_scope_4")).toBe(true);
+    expect(await assetInApprovedScope(ctxA, "asset_scope_3")).toBe(true);
+    // v2 supersedes v1: asset_scope_4 is removed from the LATEST approved
+    // version, so it must leave approved scope even though the older approved
+    // v1 still lists it.
+    const v2 = await createScopeVersion(ctxA, set.id, { assetIds: ["asset_scope_3"] });
+    await submitScopeVersion(ctxA, v2.id);
+    await approveScopeVersion(ctxA, v2.id);
+    expect(await assetInApprovedScope(ctxA, "asset_scope_4")).toBe(false);
+    expect(await assetInApprovedScope(ctxA, "asset_scope_3")).toBe(true);
+    // cross-tenant still isolated
     expect(await assetInApprovedScope(ctxB, "asset_scope_3")).toBe(false);
   });
 });

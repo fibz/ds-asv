@@ -60,6 +60,8 @@ describe("authorization service", () => {
     expect(again.id).toBe(auth.id);
     // verify recomputes
     expect(verifyAuthorizationSignature(auth)).toBe(true);
+    // tamper → reject: any field change must invalidate the signature
+    expect(verifyAuthorizationSignature({ ...auth, scopeVersionHash: "x" })).toBe(false);
     const fetched = await getAuthorization(ctx, version.id);
     expect(fetched?.id).toBe(auth.id);
   });

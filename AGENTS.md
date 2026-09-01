@@ -44,5 +44,6 @@
 ## Known follow-ups (deferred, tracked)
 
 - Bind cookie session ids into the Session registry (registry is ready) — dashboard layout is header-auth only.
+- Staff identity wiring: resolveTenantContext hardcodes isStaff:false — the prod staff gates (dispute moderation, report attestation) are unreachable in prod until a real staff-identity path (e.g. Keycloak role claim → isStaff) lands. Fail-closed (denies everyone) until then.
 - Hardcoded dev DB passwords → env/Vault bootstrap before any non-dev run.
 - Pre-existing tsc errors (next.config.ts duplicate output; normalize.ts BigInt target) — the stale clerkId error was fixed by the Clerk strip.

@@ -98,11 +98,34 @@ export async function getScopeVersion(ctx: TenantContext, versionId: string): Pr
   return withTenant(ctx.organizationId, (tx) => tx.scopeVersion.findUnique({ where: { id: versionId }, include: { items: true } }));
 }
 
+/**
+ * True iff the asset is a ScopeItem of the latest approved version of at least
+ * one scope set in the org. Semantics: a later approved version supersedes
+ * earlier ones, so an asset that only appears in an OLDER approved version
+ * (e.g. removed from the newest approved version of every set) is OUT of
+ * approved scope. This keeps the prod scan gate anchored to the defensible
+ * current scope snapshot (spec §5.5) rather than any historical one — the
+ * property that distinguishes the gate from a plain port scanner's
+ * "was ever in scope" check.
+ */
 export async function assetInApprovedScope(ctx: TenantContext, assetId: string): Promise<boolean> {
   return withTenant(ctx.organizationId, async (tx) => {
-    const found = await tx.scopeItem.findFirst({
-      where: { organizationId: ctx.organizationId, assetId, scopeVersion: { status: "approved" } },
+    // Approved versions, latest first within each scope set (and RLS-bound on
+    // the tx client via the outer withTenant).
+    const approved = await tx.scopeVersion.findMany({
+      where: { organizationId: ctx.organizationId, status: "approved" },
+      include: { items: { where: { assetId } } },
+      orderBy: [{ scopeSetId: "asc" }, { versionNumber: "desc" }],
     });
-    return found !== null;
+    // Keep only the latest approved version per scope set (its first occurrence
+    // in the sorted list); older approved versions of the same set are
+    // superseded and must not keep assets in scope.
+    const seen = new Set<string>();
+    for (const version of approved) {
+      if (seen.has(version.scopeSetId)) continue;
+      seen.add(version.scopeSetId);
+      if (version.items.length > 0) return true;
+    }
+    return false;
   });
 }
