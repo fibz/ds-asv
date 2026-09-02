@@ -1,8 +1,9 @@
 """Core scoring engine — merges authenticated + unauthenticated findings."""
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
+from app.scoring.base import CVESource
 from app.scoring.cpe_mapper import CPEMapper
 from app.scoring.pci_rules import PCIRules
 from app.scoring.types import ScoredFinding
@@ -26,8 +27,8 @@ class ASVScoringEngine:
         "unauthenticated_probe": 0.50,
     }
 
-    def __init__(self):
-        self.cpe_mapper = CPEMapper()
+    def __init__(self, source: Optional[CVESource] = None):
+        self.cve_source = source if source is not None else CPEMapper()
         self.pci_rules = PCIRules()
 
     def score_inventory(
@@ -39,25 +40,30 @@ class ASVScoringEngine:
 
         packages = self._extract_packages(inventory)
         for pkg in packages:
-            cves = self.cpe_mapper.lookup_cves(
-                pkg["name"], pkg["version"], pkg.get("os")
-            )
+            cves = self.cve_source.lookup(pkg["name"], pkg["version"], pkg.get("os"))
             for cve in cves:
-                cvss = cve.get("cvss_score", 0.0)
+                cvss = cve.cvss_score
                 pci_fail = cvss >= self.PCI_FAIL_THRESHOLD
 
                 findings.append(
                     ScoredFinding(
-                        title=cve.get("title", f"CVE in {pkg['name']}"),
-                        description=cve.get("description", ""),
-                        cve_id=cve.get("cve_id"),
+                        title=cve.title or f"CVE in {pkg['name']}",
+                        description=cve.description,
+                        cve_id=cve.cve_id or None,
                         cvss_score=cvss,
-                        cvss_vector=cve.get("cvss_vector"),
+                        cvss_vector=cve.cvss_vector or None,
                         severity=self._cvss_to_severity(cvss),
                         confidence=confidence,
                         source=source,
                         pci_fail=pci_fail,
-                        raw_evidence={"package": pkg, "cve": cve},
+                        raw_evidence={
+                            "package": pkg,
+                            "cve": {
+                                "cve_id": cve.cve_id,
+                                "title": cve.title,
+                                "cvss_score": cve.cvss_score,
+                            },
+                        },
                         requires_dispute=confidence < 0.8 and pci_fail,
                     )
                 )
@@ -76,23 +82,30 @@ class ASVScoringEngine:
         confidence = self.CONFIDENCE_MAP.get("unauthenticated_banner", 0.6)
 
         for banner in banner_data:
-            cves = self.cpe_mapper.lookup_cves(service_name, banner.get("version"))
+            cves = self.cve_source.lookup(service_name, banner.get("version") or "")
             for cve in cves:
-                cvss = cve.get("cvss_score", 0.0)
+                cvss = cve.cvss_score
                 pci_fail = cvss >= self.PCI_FAIL_THRESHOLD
 
                 findings.append(
                     ScoredFinding(
-                        title=f"{service_name} — {cve.get('title', 'Unknown CVE')}",
-                        description=cve.get("description", ""),
-                        cve_id=cve.get("cve_id"),
+                        title=f"{service_name} — {cve.title or 'Unknown CVE'}",
+                        description=cve.description,
+                        cve_id=cve.cve_id or None,
                         cvss_score=cvss,
-                        cvss_vector=cve.get("cvss_vector"),
+                        cvss_vector=cve.cvss_vector or None,
                         severity=self._cvss_to_severity(cvss),
                         confidence=confidence,
                         source="unauthenticated_banner",
                         pci_fail=pci_fail,
-                        raw_evidence={"banner": banner, "cve": cve},
+                        raw_evidence={
+                            "banner": banner,
+                            "cve": {
+                                "cve_id": cve.cve_id,
+                                "title": cve.title,
+                                "cvss_score": cve.cvss_score,
+                            },
+                        },
                         requires_dispute=confidence < 0.8 and pci_fail,
                     )
                 )

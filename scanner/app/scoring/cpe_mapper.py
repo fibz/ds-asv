@@ -7,21 +7,22 @@ For MVP we provide a pluggable interface with a basic in-memory fallback.
 import json
 import logging
 import os
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from app.scoring.nvd_loader import match_ranges
+from app.scoring.types import CVEData
 
 logger = logging.getLogger("asv.scoring")
 
 
-@dataclass
-class CVEFntry:
-    cve_id: str
-    title: str
-    description: str
-    cvss_score: float
-    cvss_vector: str
+def _to_cve_data(record: Dict[str, Any]) -> CVEData:
+    return CVEData(
+        cve_id=str(record.get("cve_id", "")),
+        title=str(record.get("title", "")),
+        description=str(record.get("description", "")),
+        cvss_score=float(record.get("cvss_score", 0.0) or 0.0),
+        cvss_vector=str(record.get("cvss_vector", "")),
+    )
 
 
 class CPEMapper:
@@ -71,6 +72,30 @@ class CPEMapper:
             if staged:
                 return staged
         return self._demo_lookup(package_name, version)
+
+    def lookup(
+        self,
+        product: str,
+        version: Optional[str],
+        os_hint: Optional[str] = None,
+    ) -> List[CVEData]:
+        """CVESource conformance: dict pipeline (NVD cache → ranges → demo
+        fallback) converted to CVEData. The demo fallback is logged exactly
+        as before and only fires when no cache data exists."""
+        return [
+            _to_cve_data(d) for d in self.lookup_cves(product, version or "", os_hint)
+        ]
+
+    def refresh(self) -> None:
+        """Reload the cache file if it changed out-of-band (built by
+        scripts/update_nvd.py). Failures leave the previous cache in place."""
+        self._cache = {}
+        self._nvd_ranges = {}
+        self._load_cache()
+        self._normalize_cache()
+
+    def describe(self) -> str:
+        return f"CPEMapper(cache={self.nvd_feed_path or 'unset'})"
 
     def _demo_lookup(self, package_name: str, version: str) -> List[Dict[str, Any]]:
         """Demo fallback for environments without an NVD cache; logged as a warning."""

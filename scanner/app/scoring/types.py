@@ -5,6 +5,17 @@ from typing import Any, Dict, Optional
 
 
 @dataclass
+class CVEData:
+    """One CVE record returned by a CVESource (Greenbone, NVD, ...)."""
+
+    cve_id: str
+    title: str = ""
+    description: str = ""
+    cvss_score: float = 0.0
+    cvss_vector: str = ""
+
+
+@dataclass
 class ScoredFinding:
     title: str
     description: str = ""
