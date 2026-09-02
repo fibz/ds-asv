@@ -21,6 +21,9 @@ paramiko>=3.4.0
 # Black-box (unauthenticated) scanning
 python-nmap>=0.7.1
 
+# CVE source (Greenbone) — GMP client used ONLY by scripts/update_greenbone.py live mode
+python-gvm>=24.0.0
+
 # WinRM scanning
 pywinrm>=0.4.3
 

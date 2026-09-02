@@ -45,6 +45,7 @@ scanner/.pytest_cache/
 scanner/.mypy_cache/
 scanner/.coverage
 scanner/prisma/generated/
+scanner/data/
 
 # Git worktrees
 .worktrees/
