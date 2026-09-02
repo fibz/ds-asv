@@ -4,7 +4,7 @@
 
 - **What:** Commercial PCI DSS compliance portal. SaaS, multi-tenant (nested orgs — QSA resellers + merchants).
 - **Stack:** Next.js/TS portal (`portal/`) + Python/FastAPI scanner (`scanner/`) + PostgreSQL (RLS). Self-hosted Keycloak (OIDC), Vault, MinIO/S3.
-- **Repo:** https://github.com/fibz/ds-asv — public, branch `main`. Pushed to `origin/main` at `f49c709` (Phase 5). Local `main` is 1 ahead of `origin/main` at `98b2883` (Phase 5b design spec, NOT pushed).
+- **Repo:** https://github.com/fibz/ds-asv — public, branch `main`. Pushed to `origin/main` at `8f881a0` (Phase 7, 2026-09-02); local `main` in sync with `origin/main`. Phase 5b NVD-mirror design spec (`98b2883`) is already part of history.
 - **Phase 1 DONE** (tenant & identity foundation): RLS multi-tenancy (non-superuser `asv_app` role), Keycloak OIDC header auth + salted API keys, RBAC (`hasRole`/`can`/`requireRole`), single-use expiring invitations, append-only audit (DB-enforced), cross-tenant isolation tests.
 - **Phase 2 DONE** (asset inventory): Asset/AssetVerification/AssetImport models + RLS, identifier normalization (ipv4/ipv6/cidr/fqdn), CSV import w/ preview + downloadable invalid rows + idempotency, dedupe (duplicates never create extra assets), lifecycle/retire (referenced-asset history preserved — row + audit + verification, never hard-deleted), DNS TXT/manual verification, API routes (CRUD/import/retire/verification), assets UI (list/filter/detail + import), ApiKey RLS revival. **273/273 tests green** (`npx vitest run` in `portal/`).
 - **Design docs:** `docs/superpowers/specs/2026-08-29-ds-asv-pci-portal-design.md` (approved). Phase 1 plan: `docs/superpowers/plans/2026-08-29-phase1-tenant-identity.md`. Phase 2 plan: `docs/superpowers/plans/2026-08-30-phase2-asset-inventory.md`.
@@ -58,6 +58,10 @@
 
 ## Known follow-ups (deferred, tracked)
 
+- **PLACEHOLDER — live Greenbone verify (PENDING, user's Kali VM not ready 2026-09-02).** Run when the VM is up (pre-flight: `sudo gvm-check-setup` green, SSH user in `_gvm` group, gmp client present). From `scanner/`:
+  `GREENBONE_HOST=<kali-ip> GREENBONE_PORT=22 GREENBONE_USER=<gmp-admin-user> GREENBONE_PASSWORD=<pass> .venv/bin/python scripts/update_greenbone.py`
+  then `GREENBONE_FEED_PATH=<cache path> .venv/bin/python -c "from app.scoring.greenbone_source import GreenboneSource; print([c.cve_id for c in GreenboneSource().lookup('nginx','1.18.0')])"`.
+  Then update this line to `**DONE**` with the fetch + lookup output, and follow with the optional scheduled refresh (5b §4.3 pattern) + service→product alias mapping.
 - Bind cookie session ids into the Session registry (registry is ready) — dashboard layout is header-auth only.
 - Hardcoded dev DB passwords → env/Vault bootstrap before any non-dev run.
 - Pre-existing tsc errors (next.config.ts duplicate output; normalize.ts BigInt target) — the stale clerkId error was fixed by the Clerk strip.
