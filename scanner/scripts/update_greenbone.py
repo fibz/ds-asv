@@ -8,8 +8,11 @@ Two modes:
                      with the live mode below and keep it as a fixture)
   live (default)     fetch NVT metadata from gvmd over SSH (GMP) using
                      python-gvm — requires python-gvm + a reachable gvmd;
-                     credentials come from GREENBONE_HOST / GREENBONE_PORT /
-                     GREENBONE_USER / GREENBONE_PASSWORD
+                     SSH login comes from GREENBONE_HOST / GREENBONE_PORT /
+                     GREENBONE_SSH_USER / GREENBONE_SSH_PASSWORD
+                     (GREENBONE_SSH_AUTO_ACCEPT=1 accepts the host key on
+                     first connect), GMP credentials from GREENBONE_USER /
+                     GREENBONE_PASSWORD
 
 Writes the {versioned, ranges} cache to $GREENBONE_FEED_PATH
 (default ./data/greenbone_cves.json, see GREENBONE_FEED_PATH) via a temp
@@ -40,6 +43,34 @@ from app.scoring.greenbone_export import build_greenbone_cache  # noqa: E402
 DEFAULT_FEED_PATH = "./data/greenbone_cves.json"
 
 
+def _ssh_kwargs() -> dict:
+    """kwargs for python-gvm's SSHConnection, from the environment.
+
+    GREENBONE_HOST / GREENBONE_PORT select the reachable SSH target
+    (defaults 127.0.0.1:22). python-gvm's SSHConnection defaults the SSH
+    login to the ``gmp`` user with NO password — which cannot authenticate
+    against a normal Kali box — so live fetches MUST set
+    GREENBONE_SSH_USER / GREENBONE_SSH_PASSWORD. Setting
+    GREENBONE_SSH_AUTO_ACCEPT=1 (or true/yes) accepts the remote host key
+    on first connect (convenience for one-shot cache builds; you may
+    instead pre-seed ~/.ssh/known_hosts).
+    """
+    kwargs: dict = {
+        "hostname": os.environ.get("GREENBONE_HOST", "127.0.0.1"),
+        "port": int(os.environ.get("GREENBONE_PORT", "22")),
+    }
+    user = os.environ.get("GREENBONE_SSH_USER")
+    if user:
+        kwargs["username"] = user
+    ssh_password = os.environ.get("GREENBONE_SSH_PASSWORD")
+    if ssh_password:
+        kwargs["password"] = ssh_password
+    auto = os.environ.get("GREENBONE_SSH_AUTO_ACCEPT")
+    if auto and auto.strip().lower() in ("1", "true", "yes"):
+        kwargs["auto_accept_host"] = True
+    return kwargs
+
+
 def _fetch_gmp_xml() -> str:
     """Fetch EVERY NVT from gvmd (GMP) and return ONE <get_nvts_response>
     document carrying all <nvt> elements (for build_greenbone_cache).
@@ -61,8 +92,6 @@ def _fetch_gmp_xml() -> str:
             "use --gmp-xml <file> for offline cache builds"
         ) from exc
 
-    host = os.environ.get("GREENBONE_HOST", "127.0.0.1")
-    port = int(os.environ.get("GREENBONE_PORT", "22"))
     user = os.environ.get("GREENBONE_USER", "admin")
     password = os.environ.get("GREENBONE_PASSWORD", "")
 
@@ -75,7 +104,7 @@ def _fetch_gmp_xml() -> str:
         root = ET.fromstring(text)
         return root, list(root.iter("nvt"))
 
-    connection = SSHConnection(hostname=host, port=port)
+    connection = SSHConnection(**_ssh_kwargs())
     with GMP(connection) as gmp:
         gmp.authenticate(user, password)
         first_root, first_nvts = page(f"rows={ROWS} first=0")
