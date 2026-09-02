@@ -962,8 +962,17 @@ DEFAULT_FEED_PATH = "./data/greenbone_cves.json"
 
 
 def _fetch_gmp_xml() -> str:
-    """Live GMP get_nvts (details) via python-gvm. Imported lazily so
-    offline paths (and tests) never require python-gvm."""
+    """Fetch EVERY NVT from gvmd (GMP) and return ONE <get_nvts_response>
+    document carrying all <nvt> elements (for build_greenbone_cache).
+
+    get_nvts caps each response at 1000 rows, so we paginate with the
+    ``rows=N first=M`` filter — the forum-verified pattern for gmp 22.x
+    (forum.greenbone.net/t/getting-more-than-1000-results-with-python-gvm/8578)
+    — instead of version-specific kwargs. python-gvm is imported lazily so
+    offline paths (and tests) never require it.
+    """
+    import xml.etree.ElementTree as ET
+
     try:
         from gvm.connections import SSHConnection
         from gvm.protocols.gmp import GMP
@@ -978,11 +987,43 @@ def _fetch_gmp_xml() -> str:
     user = os.environ.get("GREENBONE_USER", "admin")
     password = os.environ.get("GREENBONE_PASSWORD", "")
 
+    ROWS = 1000
+    MAX_OFFSET = 1_000_000  # sanity guard against a runaway loop
+
+    def page(filter_string: str):
+        resp = gmp.get_nvts(details=True, filter_string=filter_string)
+        text = resp if isinstance(resp, str) else resp.decode("utf-8")
+        root = ET.fromstring(text)
+        return root, list(root.iter("nvt"))
+
     connection = SSHConnection(hostname=host, port=port)
     with GMP(connection) as gmp:
         gmp.authenticate(user, password)
-        response = gmp.get_nvts(details=True, ignore_pagination=True)
-    return response if isinstance(response, str) else response.decode("utf-8")
+        first_root, first_nvts = page(f"rows={ROWS} first=0")
+        total_el = first_root.find("filtered")
+        try:
+            total = (
+                int(total_el.text)
+                if total_el is not None and total_el.text
+                else len(first_nvts)
+            )
+        except ValueError:
+            total = len(first_nvts)
+
+        nvts = list(first_nvts)
+        offset = ROWS
+        while len(nvts) < total and offset < MAX_OFFSET:
+            _, more = page(f"rows={ROWS} first={offset}")
+            if not more:
+                break
+            nvts.extend(more)
+            offset += ROWS
+
+    return (
+        "<get_nvts_response>"
+        + "".join(ET.tostring(n, encoding="unicode") for n in nvts)
+        + "</get_nvts_response>"
+    )
 
 
 def _resolve_output(out: str | None) -> Path:

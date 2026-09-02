@@ -33,7 +33,12 @@ def _text(nvt: ET.Element, tag: str) -> str:
 
 
 def _cvss(nvt: ET.Element) -> float:
+    """NVT base score: <cvss_base> (older GMP) or <severities score=...>
+    (GMP 22.x+ — see forum.greenbone.net/t/8578). Missing/blank -> 0.0."""
     raw = _text(nvt, "cvss_base")
+    if not raw:
+        sev = nvt.find("severities")
+        raw = sev.get("score", "") if sev is not None else ""
     try:
         return float(raw)
     except ValueError:

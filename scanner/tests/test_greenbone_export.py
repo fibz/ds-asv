@@ -40,3 +40,17 @@ def test_empty_response_yields_empty_cache():
 def test_malformed_xml_raises_lookup_error():
     with pytest.raises(Exception):
         build_greenbone_cache("<get_nvts_response><nvt>")
+
+
+def test_cvss_falls_back_to_severities_score_attribute():
+    # GMP 22.x+ NVTs carry the score on <severities score=...> — see
+    # forum.greenbone.net/t/getting-more-than-1000-results-with-python-gvm/8578.
+    xml = (
+        "<get_nvts_response>"
+        '<nvt oid="x"><name>n</name><summary>s</summary>'
+        '<severities score="7.5"/>'
+        "<cve>CVE-2020-0002</cve><cpe>cpe:/a:vendor:prod:1.0</cpe>"
+        "</nvt></get_nvts_response>"
+    )
+    cache = build_greenbone_cache(xml)
+    assert cache["versioned"]["prod:1.0"][0]["cvss_score"] == 7.5
