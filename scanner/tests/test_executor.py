@@ -79,3 +79,60 @@ def test_execute_manifest_success():
 def test_execute_manifest_rejects_invalid():
     with pytest.raises(InvalidManifestError):
         execute_manifest("garbage")
+
+
+def test_execute_manifest_scores_through_cve_source_and_posts_contract():
+    """Executor regression (5b §6.4): a real engine reading through a CVESource
+    must keep the posted FindingIngest contract (cveId/pciSeverity) — the
+    seam never changes the wire shape."""
+    import httpx
+
+    from app.scoring.engine import ASVScoringEngine
+    from app.scoring.types import CVEData
+
+    class FakeSource:
+        def lookup(self, product, version, os_hint=None):
+            return [
+                CVEData(
+                    cve_id="CVE-FAKE-7",
+                    title="t",
+                    description="d",
+                    cvss_score=7.5,
+                    cvss_vector="",
+                )
+            ]
+
+        def refresh(self):
+            pass
+
+        def describe(self):
+            return "fake"
+
+    posted = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path.endswith("/findings"):
+            posted.append(json.loads(request.content))
+            return httpx.Response(201, json={"count": 1})
+        if request.method == "POST":
+            return httpx.Response(201, json={"count": 1})
+        return httpx.Response(200, json={})
+
+    client = PortalClient(
+        base_url="http://portal.test",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    engine = ASVScoringEngine(source=FakeSource())
+    result = execute_manifest(
+        _make_token(),
+        scanner_factory=FakeScanner,
+        client=client,
+        engine=engine,
+    )
+    assert result["status"] == "COMPLETED"
+    assert result["findings"] >= 1
+    assert posted, "expected a findings POST"
+    body = posted[0]
+    items = body.get("findings", body) if isinstance(body, dict) else body
+    assert any(f.get("cveId") == "CVE-FAKE-7" for f in items)
+    assert any(f.get("pciSeverity") == "High" for f in items)

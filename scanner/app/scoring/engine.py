@@ -1,14 +1,25 @@
 """Core scoring engine — merges authenticated + unauthenticated findings."""
 
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 from app.scoring.base import CVESource
 from app.scoring.cpe_mapper import CPEMapper
+from app.scoring.greenbone_source import DEFAULT_FEED_PATH, GreenboneSource
 from app.scoring.pci_rules import PCIRules
 from app.scoring.types import ScoredFinding
 
 logger = logging.getLogger("asv.scoring")
+
+
+def default_cve_source() -> CVESource:
+    """GreenboneSource when its cache exists; else the legacy CPEMapper
+    (NVD cache path + demo fallback) — dev/test behavior unchanged."""
+    feed = os.environ.get("GREENBONE_FEED_PATH", DEFAULT_FEED_PATH)
+    if os.path.exists(feed):
+        return GreenboneSource(feed)
+    return CPEMapper()
 
 
 class ASVScoringEngine:
@@ -28,7 +39,7 @@ class ASVScoringEngine:
     }
 
     def __init__(self, source: Optional[CVESource] = None):
-        self.cve_source = source if source is not None else CPEMapper()
+        self.cve_source = source if source is not None else default_cve_source()
         self.pci_rules = PCIRules()
 
     def score_inventory(
