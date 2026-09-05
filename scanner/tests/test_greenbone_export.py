@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from app.scoring.greenbone_export import build_greenbone_cache
+from app.scoring.greenbone_export import (
+    build_greenbone_cache,
+    build_greenbone_cache_from_tsv,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "gmp_get_nvts.xml"
 
@@ -54,3 +57,32 @@ def test_cvss_falls_back_to_severities_score_attribute():
     )
     cache = build_greenbone_cache(xml)
     assert cache["versioned"]["prod:1.0"][0]["cvss_score"] == 7.5
+
+
+TSV = (
+    "OpenSSL 3.0.1 advisory\tCVE-2022-1292\t9.8\tcpe:/a:openssl:openssl:3.0.1\n"
+    "nginx advisory\tCVE-2021-23017, CVE-2022-41741\t7.7\tcpe:/a:nginx:nginx\n"
+    "heartbleed\tCVE-2014-0160\t7.5\tcpe:2.3:a:openssl:openssl:1.0.1:*:*:*:*:*:*:*\n"
+    "no cve row\t  \t5.0\tcpe:/a:vendor:product\n"
+    "no cpe row\tCVE-2020-0001\t5.0\tgarbage-not-a-cpe\n"
+)
+
+
+def test_tsv_builds_versioned_entries():
+    cache = build_greenbone_cache_from_tsv(TSV)
+    versioned = cache["versioned"]
+    assert cache["ranges"] == {}
+    assert [c["cve_id"] for c in versioned["openssl:3.0.1"]] == ["CVE-2022-1292"]
+    assert versioned["openssl:3.0.1"][0]["cvss_score"] == 9.8
+    assert [c["cve_id"] for c in versioned["nginx:"]] == [
+        "CVE-2021-23017",
+        "CVE-2022-41741",
+    ]
+    assert [c["cve_id"] for c in versioned["openssl:1.0.1"]] == ["CVE-2014-0160"]
+    # rows without a CVE list or with an unparseable CPE are skipped
+    assert "vendor:product" not in versioned
+    assert not any(k.startswith("garbage") for k in versioned)
+
+
+def test_tsv_empty_yields_empty_cache():
+    assert build_greenbone_cache_from_tsv("") == {"versioned": {}, "ranges": {}}

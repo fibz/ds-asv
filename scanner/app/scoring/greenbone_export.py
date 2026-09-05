@@ -104,3 +104,61 @@ def build_greenbone_cache(xml_text: str) -> Dict[str, Any]:
                 bucket.append(record)
 
     return {"versioned": versioned, "ranges": {}}
+
+
+def build_greenbone_cache_from_tsv(tsv_text: str) -> Dict[str, Any]:
+    """gvmd postgres dump (TSV) -> {"versioned": {...}, "ranges": {}}.
+
+    Identical cache semantics to :func:`build_greenbone_cache`, but the rows
+    come from gvmd's own postgres instead of the GMP ``get_nvts`` XML. This
+    is the usable path against gvmd 26.24, which ignores get_nvts filters
+    and stalls generating ``details`` responses (live-verified 2026-09-05).
+    One row per (nvt, cpe), columns::
+
+        name <TAB> cve-list <TAB> cvss_base <TAB> cpe
+
+    produced by e.g.::
+
+        docker exec pg-gvm psql -U gvmd -A -t -F $'\\t' \\
+          -c "SELECT n.name, n.cve, n.cvss_base, r.ref_id FROM nvts n
+              JOIN vt_refs r ON r.vt_uuid = n.uuid AND r.ref_type='cpe'
+              WHERE n.cve <> ''"
+
+    Rows without a CVE list or with an unparseable CPE are skipped; the
+    builder never invents data (cvss defaults 0.0, vector "").
+    """
+    versioned: Dict[str, List[Dict[str, Any]]] = {}
+
+    for line in tsv_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 4:
+            continue
+        name, cve_raw, cvss_raw, cpe_raw = parts[0], parts[1], parts[2], parts[3]
+        cve_list = [c for c in _CVE_SPLIT.split(cve_raw) if c.startswith("CVE-")]
+        if not cve_list:
+            continue
+        parsed = _parse_cpe(cpe_raw)
+        if not parsed:
+            continue
+        product, version = parsed
+        try:
+            cvss_score = float(cvss_raw) if cvss_raw else 0.0
+        except ValueError:
+            cvss_score = 0.0
+        base = {
+            "title": name or cve_list[0],
+            "description": "",
+            "cvss_score": cvss_score,
+            "cvss_vector": "",
+        }
+        key = f"{product}:{version}" if version else f"{product}:"
+        bucket = versioned.setdefault(key, [])
+        for cve_id in cve_list:
+            record = dict(base, cve_id=cve_id)
+            if all(r["cve_id"] != cve_id for r in bucket):
+                bucket.append(record)
+
+    return {"versioned": versioned, "ranges": {}}

@@ -57,7 +57,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent  # scanner/ — app/ lives under it
 sys.path.insert(0, str(REPO_ROOT))
 
-from app.scoring.greenbone_export import build_greenbone_cache  # noqa: E402
+from app.scoring.greenbone_export import (  # noqa: E402
+    build_greenbone_cache,
+    build_greenbone_cache_from_tsv,
+)
 
 DEFAULT_FEED_PATH = "./data/greenbone_cves.json"
 DEFAULT_UNIX_SOCKET = "/run/gvmd/gvmd.sock"
@@ -308,16 +311,27 @@ def main() -> int:
     parser.add_argument(
         "--gmp-xml", help="Local GMP get_nvts XML file instead of a live fetch."
     )
+    parser.add_argument(
+        "--cpe-tsv",
+        help="gvmd postgres TSV dump (name<TAB>cve<TAB>cvss_base<TAB>cpe) "
+        "instead of a live fetch — the reliable path against gvmd 26.24, "
+        "which ignores get_nvts filters and stalls on details.",
+    )
     parser.add_argument("--out", help="Output cache path (defaults to $GREENBONE_FEED_PATH).")
     args = parser.parse_args()
 
     try:
-        xml_text = (
-            Path(args.gmp_xml).read_text(encoding="utf-8")
-            if args.gmp_xml
-            else _fetch_gmp_xml()
-        )
-        cache = build_greenbone_cache(xml_text)
+        if args.cpe_tsv:
+            cache = build_greenbone_cache_from_tsv(
+                Path(args.cpe_tsv).read_text(encoding="utf-8")
+            )
+        else:
+            xml_text = (
+                Path(args.gmp_xml).read_text(encoding="utf-8")
+                if args.gmp_xml
+                else _fetch_gmp_xml()
+            )
+            cache = build_greenbone_cache(xml_text)
     except FileNotFoundError as exc:
         print(f"error: cannot read GMP XML file: {exc}", file=sys.stderr)
         return 1
