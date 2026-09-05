@@ -108,3 +108,42 @@ def test_ssh_kwargs_auto_accept_falsy_is_omitted(monkeypatch):
     kwargs = _load_module()._ssh_kwargs()
     assert kwargs["username"] == "kali"
     assert "auto_accept_host" not in kwargs
+
+
+def test_connection_type_defaults_to_ssh(monkeypatch):
+    monkeypatch.delenv("GREENBONE_CONNECTION", raising=False)
+    assert _load_module()._connection_type() == "ssh"
+
+
+def test_connection_type_honors_env(monkeypatch):
+    mod = _load_module()
+    monkeypatch.setenv("GREENBONE_CONNECTION", "tcp")
+    assert mod._connection_type() == "tcp"
+    monkeypatch.setenv("GREENBONE_CONNECTION", "unix")
+    assert mod._connection_type() == "unix"
+
+
+def test_connection_type_rejects_unknown(monkeypatch):
+    monkeypatch.setenv("GREENBONE_CONNECTION", "carrier-pigeon")
+    try:
+        _load_module()._connection_type()
+        raise AssertionError("expected SystemExit for unknown connection type")
+    except SystemExit as exc:
+        assert "GREENBONE_CONNECTION" in str(exc)
+
+
+def test_tcp_connection_from_env(monkeypatch):
+    monkeypatch.setenv("GREENBONE_CONNECTION", "tcp")
+    monkeypatch.setenv("GREENBONE_HOST", "127.0.0.1")
+    monkeypatch.setenv("GREENBONE_PORT", "19390")
+    conn = _load_module()._connection()
+    assert conn.__class__.__name__ == "TCPConnection"
+    assert (conn.host, conn.port) == ("127.0.0.1", 19390)
+
+
+def test_unix_connection_from_env(monkeypatch):
+    monkeypatch.setenv("GREENBONE_CONNECTION", "unix")
+    monkeypatch.setenv("GREENBONE_SOCKET", "/tmp/gvmd.sock")
+    conn = _load_module()._connection()
+    assert conn.__class__.__name__ == "UnixSocketConnection"
+    assert conn.path == "/tmp/gvmd.sock"

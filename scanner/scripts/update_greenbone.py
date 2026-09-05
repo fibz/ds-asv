@@ -6,12 +6,24 @@ Two modes:
   --gmp-xml <file>   parse an existing GMP <get_nvts_response> XML document
                      (offline: use in CI/dev; capture one from a real gvmd
                      with the live mode below and keep it as a fixture)
-  live (default)     fetch NVT metadata from gvmd over SSH (GMP) using
-                     python-gvm — requires python-gvm + a reachable gvmd;
-                     SSH login comes from GREENBONE_HOST / GREENBONE_PORT /
-                     GREENBONE_SSH_USER / GREENBONE_SSH_PASSWORD
-                     (GREENBONE_SSH_AUTO_ACCEPT=1 accepts the host key on
-                     first connect), GMP credentials from GREENBONE_USER /
+  live (default)     fetch NVT metadata from gvmd (GMP) using python-gvm —
+                     requires python-gvm + a reachable gvmd. Connection
+                     type from $GREENBONE_CONNECTION:
+                       ssh   python-gvm SSHConnection (default): SSH login
+                             via GREENBONE_HOST / GREENBONE_PORT /
+                             GREENBONE_SSH_USER / GREENBONE_SSH_PASSWORD
+                             (GREENBONE_SSH_AUTO_ACCEPT=1 accepts the host
+                             key on first connect; note python-gvm only
+                             supports password SSH auth — no key files)
+                       tcp   plain GMP over TCP — point it at an OpenSSH
+                             unix-socket forward of the remote gvmd socket:
+                               ssh -L 127.0.0.1:9390:/run/gvmd/gvmd.sock user@host
+                             then GREENBONE_CONNECTION=tcp GREENBONE_HOST=127.0.0.1
+                             GREENBONE_PORT=9390
+                       unix  local gvmd socket (GREENBONE_SOCKET, default
+                             /run/gvmd/gvmd.sock) — use when this script
+                             runs on the same host as gvmd
+                     GMP credentials always come from GREENBONE_USER /
                      GREENBONE_PASSWORD
 
 Writes the {versioned, ranges} cache to $GREENBONE_FEED_PATH
@@ -41,6 +53,102 @@ sys.path.insert(0, str(REPO_ROOT))
 from app.scoring.greenbone_export import build_greenbone_cache  # noqa: E402
 
 DEFAULT_FEED_PATH = "./data/greenbone_cves.json"
+DEFAULT_UNIX_SOCKET = "/run/gvmd/gvmd.sock"
+DEFAULT_TCP_PORT = 9390
+
+
+class TCPConnection:
+    """Minimal GMP-over-TCP connection (python-gvm GmpConnection-compatible).
+
+    Speaks plain GMP XML over a TCP stream. The typical use is talking to a
+    remote gvmd through an OpenSSH forward of its unix socket::
+
+        ssh -L 127.0.0.1:9390:/run/gvmd/gvmd.sock user@gvmd-host
+        GREENBONE_CONNECTION=tcp GREENBONE_HOST=127.0.0.1 \
+            GREENBONE_PORT=9390 python scripts/update_greenbone.py
+
+    Exposes read/send/connect/disconnect/finish_send so python-gvm's GMP
+    protocol object can drive it exactly like SSHConnection/UnixSocketConnection.
+    """
+
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = DEFAULT_TCP_PORT,
+        timeout: int | float = 60,
+    ):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self._sock: object = None  # socket.socket once connect()ed
+
+    def connect(self) -> None:
+        import socket
+
+        self._sock = socket.create_connection(
+            (self.host, self.port), timeout=self.timeout
+        )
+
+    def send(self, data: bytes) -> None:
+        if self._sock is None:
+            raise OSError("TCPConnection not connected")
+        self._sock.sendall(data)  # type: ignore[attr-defined]
+
+    def read(self) -> bytes:
+        if self._sock is None:
+            raise OSError("TCPConnection not connected")
+        data = self._sock.recv(65536)  # type: ignore[attr-defined]
+        if not data:
+            raise OSError("Remote closed the connection")
+        return data
+
+    def finish_send(self) -> None:
+        import socket
+
+        if self._sock is not None:
+            try:
+                self._sock.shutdown(socket.SHUT_WR)  # type: ignore[attr-defined]
+            except OSError:
+                pass
+
+    def disconnect(self) -> None:
+        if self._sock is not None:
+            self._sock.close()  # type: ignore[attr-defined]
+            self._sock = None
+
+
+def _connection_type() -> str:
+    """GMP connection type: ssh (default) | tcp | unix (from GREENBONE_CONNECTION)."""
+    ctype = os.environ.get("GREENBONE_CONNECTION", "ssh").strip().lower()
+    if ctype not in ("ssh", "tcp", "unix"):
+        raise SystemExit(
+            f"GREENBONE_CONNECTION must be ssh, tcp, or unix (got {ctype!r})"
+        )
+    return ctype
+
+
+def _connection():
+    """Build the python-gvm connection object for the configured type."""
+    ctype = _connection_type()
+    if ctype == "ssh":
+        try:
+            from gvm.connections import SSHConnection
+        except ImportError as exc:  # pragma: no cover - manual/live path
+            raise SystemExit(
+                "python-gvm is not installed (pip install -r requirements.txt); "
+                "use --gmp-xml <file> for offline cache builds"
+            ) from exc
+        return SSHConnection(**_ssh_kwargs())
+    if ctype == "unix":
+        from gvm.connections import UnixSocketConnection
+
+        return UnixSocketConnection(
+            path=os.environ.get("GREENBONE_SOCKET", DEFAULT_UNIX_SOCKET)
+        )
+    return TCPConnection(
+        host=os.environ.get("GREENBONE_HOST", "127.0.0.1"),
+        port=int(os.environ.get("GREENBONE_PORT", str(DEFAULT_TCP_PORT))),
+    )
 
 
 def _ssh_kwargs() -> dict:
@@ -84,7 +192,6 @@ def _fetch_gmp_xml() -> str:
     import xml.etree.ElementTree as ET
 
     try:
-        from gvm.connections import SSHConnection
         from gvm.protocols.gmp import GMP
     except ImportError as exc:  # pragma: no cover - manual/live path
         raise SystemExit(
@@ -104,7 +211,7 @@ def _fetch_gmp_xml() -> str:
         root = ET.fromstring(text)
         return root, list(root.iter("nvt"))
 
-    connection = SSHConnection(**_ssh_kwargs())
+    connection = _connection()
     with GMP(connection) as gmp:
         gmp.authenticate(user, password)
         first_root, first_nvts = page(f"rows={ROWS} first=0")
