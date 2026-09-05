@@ -192,3 +192,14 @@ def test_cli_uses_config_defaults_for_feed_path(tmp_path, monkeypatch):
     proc = _run("--gmp-xml", str(FIXTURE), env_extra={"GREENBONE_CONFIG": str(cfg)})
     assert proc.returncode == 0, proc.stderr
     assert (tmp_path / "from-config.json").exists()
+
+
+def test_nvts_page_request_uses_canonical_filter_attribute():
+    req = _load_module()._nvts_page_request(first=0, rows=1000)
+    assert req == '<get_nvts details="1" filter="rows=1000 first=0"/>'
+    assert "filter_string" not in req
+
+
+def test_nvts_page_request_paginates_offset():
+    req = _load_module()._nvts_page_request(first=1000)
+    assert req == '<get_nvts details="1" filter="rows=1000 first=1000"/>'

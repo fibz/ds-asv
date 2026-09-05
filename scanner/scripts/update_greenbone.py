@@ -195,6 +195,18 @@ def _connection():
     )
 
 
+def _nvts_page_request(first: int, rows: int = 1000) -> str:
+    """Canonical GMP ``get_nvts`` request for one page of NVTs.
+
+    gvmd 26.24 hangs/crashes when serving get_nvts with python-gvm's
+    ``filter_string`` attribute; the canonical GMP attribute is ``filter``.
+    Live-verified 2026-09-05 against gvmd 26.24 (container build): a
+    ``filter_string`` request gets no response, the equivalent ``filter``
+    request returns status 200 with NVTs.
+    """
+    return f'<get_nvts details="1" filter="rows={rows} first={first}"/>'
+
+
 def _ssh_kwargs() -> dict:
     """kwargs for python-gvm's SSHConnection, from the environment.
 
@@ -249,8 +261,8 @@ def _fetch_gmp_xml() -> str:
     ROWS = 1000
     MAX_OFFSET = 1_000_000  # sanity guard against a runaway loop
 
-    def page(filter_string: str):
-        resp = gmp.get_nvts(details=True, filter_string=filter_string)
+    def page(first: int):
+        resp = gmp.send_command(_nvts_page_request(first=first, rows=ROWS))
         text = resp if isinstance(resp, str) else resp.decode("utf-8")
         root = ET.fromstring(text)
         return root, list(root.iter("nvt"))
@@ -258,7 +270,7 @@ def _fetch_gmp_xml() -> str:
     connection = _connection()
     with GMP(connection) as gmp:
         gmp.authenticate(user, password)
-        first_root, first_nvts = page(f"rows={ROWS} first=0")
+        first_root, first_nvts = page(0)
         total_el = first_root.find("filtered")
         try:
             total = (
@@ -272,7 +284,7 @@ def _fetch_gmp_xml() -> str:
         nvts = list(first_nvts)
         offset = ROWS
         while len(nvts) < total and offset < MAX_OFFSET:
-            _, more = page(f"rows={ROWS} first={offset}")
+            _, more = page(offset)
             if not more:
                 break
             nvts.extend(more)
