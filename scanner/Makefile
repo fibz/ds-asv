@@ -9,7 +9,7 @@ install:
 	$(VENV)/bin/pip install -r requirements-dev.txt
 
 test:
-	$(VENV)/bin/pytest tests/ -v --tb=short --cov=app --cov-report=term-missing
+	$(VENV)/bin/pytest tests/ --ignore=tests/integration -v --tb=short --cov=app --cov-report=term-missing
 
 test-integration:
 	@if command -v docker >/dev/null 2>&1; then \

@@ -1,0 +1,62 @@
+{
+  "realm": "asv-portal",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "rememberMe": false,
+  "roles": {
+    "realm": [
+      { "name": "asv-staff", "description": "Staff identity — report attestation / dispute moderation" }
+    ]
+  },
+  "users": [
+    {
+      "username": "staff-user",
+      "enabled": true,
+      "email": "staff@asv.test",
+      "firstName": "Staff",
+      "lastName": "User",
+      "credentials": [{ "type": "password", "value": "staff123" }],
+      "realmRoles": ["asv-staff"]
+    },
+    {
+      "username": "regular-user",
+      "enabled": true,
+      "email": "user@asv.test",
+      "firstName": "Regular",
+      "lastName": "User",
+      "credentials": [{ "type": "password", "value": "user123" }]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "asv-portal",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "dev-asv-client-secret-change-me",
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "redirectUris": ["http://127.0.0.1:3000/*", "http://localhost:3000/*"],
+      "webOrigins": ["http://127.0.0.1:3000", "http://localhost:3000"],
+      "attributes": {
+        "post.logout.redirect.uris": "http://127.0.0.1:3000/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience asv-portal",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "asv-portal",
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

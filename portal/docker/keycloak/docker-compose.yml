@@ -1,0 +1,28 @@
+# Local dev Keycloak for the ASV portal (Phase 8a).
+# Starts Keycloak on 127.0.0.1:8080 and imports portal/docker/keycloak/realm.json
+# ("asv-portal" realm: confidential client `asv-portal`, realm role `asv-staff`,
+# dev users staff-user/staff123 and regular-user/user123).
+#
+#   docker compose -f docker/keycloak/docker-compose.yml up -d
+#   bash docker/keycloak/verify-login.sh          # mint + dump real tokens
+#
+# Admin console: http://127.0.0.1:8080 (admin/admin, KC_BOOTSTRAP_ADMIN_*).
+name: asv-keycloak
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0.7
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./realm.json:/opt/keycloak/data/import/realm.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 10s
