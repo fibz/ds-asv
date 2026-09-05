@@ -7,8 +7,11 @@ from app.scoring.engine import ASVScoringEngine, default_cve_source
 from app.scoring.greenbone_source import GreenboneSource
 
 
-def test_default_source_is_cpe_mapper_without_cache(monkeypatch):
-    monkeypatch.delenv("GREENBONE_FEED_PATH", raising=False)
+def test_default_source_is_cpe_mapper_without_cache(tmp_path, monkeypatch):
+    # Point the feed path at a non-existent file so a REAL cache in
+    # scanner/data/ (gitignored, produced by live verification) never
+    # flips this test to GreenboneSource.
+    monkeypatch.setenv("GREENBONE_FEED_PATH", str(tmp_path / "no-cache.json"))
     source = default_cve_source()
     assert source.describe().startswith("CPEMapper")
 

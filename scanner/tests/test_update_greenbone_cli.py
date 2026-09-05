@@ -1,6 +1,7 @@
 """scripts/update_greenbone.py — fixture runs, atomic-write safety."""
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -147,3 +148,47 @@ def test_unix_connection_from_env(monkeypatch):
     conn = _load_module()._connection()
     assert conn.__class__.__name__ == "UnixSocketConnection"
     assert conn.path == "/tmp/gvmd.sock"
+
+
+def test_load_config_missing_file_returns_empty(monkeypatch, tmp_path):
+    monkeypatch.setenv("GREENBONE_CONFIG", str(tmp_path / "nope.env"))
+    assert _load_module()._load_config() == {}
+
+
+def test_load_config_sets_defaults_without_overriding_env(monkeypatch, tmp_path):
+    cfg = tmp_path / "gb.env"
+    cfg.write_text(
+        "# a comment\n"
+        "GREENBONE_HOST=10.0.0.9\n"
+        "GREENBONE_PORT=2222\n"
+        "GREENBONE_SSH_USER=from-config\n"
+        "GREENBONE_SSH_PASSWORD=cfg-pass\n\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GREENBONE_CONFIG", str(cfg))
+    monkeypatch.setenv("GREENBONE_SSH_USER", "from-real-env")
+    mod = _load_module()
+    loaded = mod._load_config()
+    assert loaded == {
+        "GREENBONE_HOST": "10.0.0.9",
+        "GREENBONE_PORT": "2222",
+        "GREENBONE_SSH_USER": "from-config",
+        "GREENBONE_SSH_PASSWORD": "cfg-pass",
+    }
+    assert os.environ["GREENBONE_HOST"] == "10.0.0.9"
+    assert os.environ["GREENBONE_PORT"] == "2222"
+    assert os.environ["GREENBONE_SSH_USER"] == "from-real-env"  # env wins
+    assert os.environ["GREENBONE_SSH_PASSWORD"] == "cfg-pass"
+
+
+def test_cli_uses_config_defaults_for_feed_path(tmp_path, monkeypatch):
+    cfg = tmp_path / "gb.env"
+    cfg.write_text(
+        f"GREENBONE_FEED_PATH={tmp_path / 'from-config.json'}\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("GREENBONE_CONFIG", str(cfg))
+    # Pass GREENBONE_CONFIG explicitly: _run builds a minimal env, so the
+    # subprocess must not fall back to the REAL scanner/greenbone.env.
+    proc = _run("--gmp-xml", str(FIXTURE), env_extra={"GREENBONE_CONFIG": str(cfg)})
+    assert proc.returncode == 0, proc.stderr
+    assert (tmp_path / "from-config.json").exists()

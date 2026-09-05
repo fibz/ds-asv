@@ -46,6 +46,7 @@ scanner/.mypy_cache/
 scanner/.coverage
 scanner/prisma/generated/
 scanner/data/
+scanner/greenbone.env
 
 # Git worktrees
 .worktrees/

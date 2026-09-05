@@ -68,7 +68,10 @@ def test_engine_score_inventory_reads_through_source():
     assert findings[0].raw_evidence["package"]["name"] == "openssl"
 
 
-def test_engine_default_source_is_cpe_mapper_without_override():
+def test_engine_default_source_is_cpe_mapper_without_override(tmp_path, monkeypatch):
     # Existing behavior: no source passed -> legacy CPEMapper (demo fallback).
+    # Hermetic: point GREENBONE_FEED_PATH at a non-existent file so a REAL
+    # cache in scanner/data/ can't flip this to GreenboneSource.
+    monkeypatch.setenv("GREENBONE_FEED_PATH", str(tmp_path / "no-cache.json"))
     engine = ASVScoringEngine()
     assert engine.cve_source.describe().startswith("CPEMapper")

@@ -36,6 +36,13 @@ Usage::
     python scripts/update_greenbone.py --gmp-xml tests/fixtures/gmp_get_nvts.xml
     python scripts/update_greenbone.py --gmp-xml local.xml --out /path/cache.json
     python scripts/update_greenbone.py               # live GMP fetch
+
+Configuration::
+
+    All GREENBONE_* values can also live in scanner/greenbone.env
+    (gitignored; copy scanner/greenbone.env.example and edit — one file
+    to change the endpoint later). $GREENBONE_CONFIG points at a different
+    file. Environment variables always take precedence over the file.
 """
 
 from __future__ import annotations
@@ -55,6 +62,43 @@ from app.scoring.greenbone_export import build_greenbone_cache  # noqa: E402
 DEFAULT_FEED_PATH = "./data/greenbone_cves.json"
 DEFAULT_UNIX_SOCKET = "/run/gvmd/gvmd.sock"
 DEFAULT_TCP_PORT = 9390
+CONFIG_FILE_NAME = "greenbone.env"
+
+
+def _default_config_path() -> Path:
+    """Default config file: scanner/greenbone.env (gitignored, real values)."""
+    return Path(__file__).resolve().parent.parent / CONFIG_FILE_NAME
+
+
+def _load_config() -> dict:
+    """Load KEY=VALUE defaults into os.environ from the config file.
+
+    The file is a plain .env-style text file (blank lines and ``#`` comment
+    lines are ignored). $GREENBONE_CONFIG overrides the default location
+    (``scanner/greenbone.env``, gitignored — copy ``greenbone.env.example``
+    and fill in your values, so the endpoint is one editable file).
+    Values ALREADY in the environment win, so shell exports still override
+    the file. Returns the parsed mapping (already applied to os.environ).
+    """
+    path = (
+        Path(os.environ["GREENBONE_CONFIG"])
+        if os.environ.get("GREENBONE_CONFIG")
+        else _default_config_path()
+    )
+    if not path.exists():
+        return {}
+    values: dict = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if not key:
+            continue
+        values[key] = value
+        os.environ.setdefault(key, value)
+    return values
 
 
 class TCPConnection:
@@ -247,6 +291,7 @@ def _resolve_output(out: str | None) -> Path:
 
 
 def main() -> int:
+    _load_config()  # scanner/greenbone.env defaults (real env vars still win)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--gmp-xml", help="Local GMP get_nvts XML file instead of a live fetch."
