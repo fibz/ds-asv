@@ -60,6 +60,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from app.scoring.greenbone_export import (  # noqa: E402
     build_greenbone_cache,
     build_greenbone_cache_from_tsv,
+    build_greenbone_cache_ranges_from_tsv,
 )
 
 DEFAULT_FEED_PATH = "./data/greenbone_cves.json"
@@ -317,6 +318,12 @@ def main() -> int:
         "instead of a live fetch — the reliable path against gvmd 26.24, "
         "which ignores get_nvts filters and stalls on details.",
     )
+    parser.add_argument(
+        "--ranges-tsv",
+        help="gvmd SCAP version-range TSV (criteria<TAB>cve<TAB>start_incl"
+        "<TAB>start_excl<TAB>end_incl<TAB>end_excl<TAB>severity) merged "
+        "into the cache's ranges (NVD version-range semantics).",
+    )
     parser.add_argument("--out", help="Output cache path (defaults to $GREENBONE_FEED_PATH).")
     args = parser.parse_args()
 
@@ -332,6 +339,10 @@ def main() -> int:
                 else _fetch_gmp_xml()
             )
             cache = build_greenbone_cache(xml_text)
+        if args.ranges_tsv:
+            cache["ranges"] = build_greenbone_cache_ranges_from_tsv(
+                Path(args.ranges_tsv).read_text(encoding="utf-8")
+            )
     except FileNotFoundError as exc:
         print(f"error: cannot read GMP XML file: {exc}", file=sys.stderr)
         return 1

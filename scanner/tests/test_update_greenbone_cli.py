@@ -218,3 +218,31 @@ def test_cli_builds_cache_from_cpe_tsv(tmp_path):
     assert [c["cve_id"] for c in cache["versioned"]["openssl:3.0.1"]] == [
         "CVE-2022-1292"
     ]
+
+
+def test_cli_merges_ranges_tsv_into_cache(tmp_path):
+    tsv = tmp_path / "nvts.tsv"
+    tsv.write_text(
+        "nginx advisory\tCVE-2021-23017\t7.7\tcpe:/a:nginx:nginx:1.18.0\n",
+        encoding="utf-8",
+    )
+    ranges = tmp_path / "ranges.tsv"
+    ranges.write_text(
+        "cpe:/a:f5:nginx\tCVE-2021-23017\t0.6.18\t\t\t1.20.1\t7.7\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "out.json"
+    proc = _run(
+        "--cpe-tsv",
+        str(tsv),
+        "--ranges-tsv",
+        str(ranges),
+        "--out",
+        str(out),
+    )
+    assert proc.returncode == 0, proc.stderr
+    cache = json.loads(out.read_text(encoding="utf-8"))
+    nginx = cache["ranges"]["nginx"][0]
+    assert nginx["cve_id"] == "CVE-2021-23017"
+    assert nginx["versionStartIncluding"] == "0.6.18"
+    assert nginx["versionEndExcluding"] == "1.20.1"

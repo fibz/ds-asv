@@ -106,6 +106,87 @@ def build_greenbone_cache(xml_text: str) -> Dict[str, Any]:
     return {"versioned": versioned, "ranges": {}}
 
 
+def build_greenbone_cache_ranges_from_tsv(
+    tsv_text: str,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """gvmd SCAP version-range dump (TSV) -> the cache's ``ranges`` dict.
+
+    The canonical NVD version-range semantics the cache supports are
+    ``versionStartIncluding`` .. ``versionEndExcluding`` only (see
+    ``nvd_loader._in_range``). Rows whose start is EXCLUSIVE or whose end is
+    INCLUSIVE cannot be expressed without inventing semantics, so they are
+    skipped (never guessed). Columns (tab-separated)::
+
+        criteria <TAB> cve <TAB> version_start_incl <TAB> version_start_excl
+        <TAB> version_end_incl <TAB> version_end_excl <TAB> severity
+
+    produced from gvmd's postgres by e.g.::
+
+        SELECT DISTINCT m.criteria, cv.name,
+               m.version_start_incl, m.version_start_excl,
+               m.version_end_incl, m.version_end_excl, cv.severity
+        FROM scap.cpe_match_strings m
+        JOIN scap.cpe_nodes_match_criteria nc
+          ON nc.match_criteria_id = m.match_criteria_id
+        JOIN scap.cpe_match_nodes n ON n.id = nc.node_id AND n.negate = 0
+        JOIN scap.cves cv ON cv.id = n.cve_id
+        WHERE m.criteria <> ''
+    """
+    ranges: Dict[str, List[Dict[str, Any]]] = {}
+
+    for line in tsv_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 7:
+            continue
+        criteria, cve, s_incl, s_excl, e_incl, e_excl, severity = parts[:7]
+        if s_excl.strip() or e_incl.strip():
+            continue  # cannot express with startIncl/endExcl-only semantics
+        if not cve.strip().startswith("CVE-"):
+            continue
+        parsed = _parse_cpe(criteria)
+        if not parsed:
+            continue
+        product, version = parsed
+        if version:
+            continue  # versioned criteria rows are per-version enumeration
+        try:
+            cvss_score = float(severity) if severity.strip() else 0.0
+        except ValueError:
+            cvss_score = 0.0
+        record: Dict[str, Any] = {
+            "cve_id": cve.strip(),
+            "title": cve.strip(),
+            "description": "",
+            "cvss_score": cvss_score,
+            "cvss_vector": "",
+        }
+        if s_incl.strip():
+            record["versionStartIncluding"] = s_incl.strip()
+        if e_excl.strip():
+            record["versionEndExcluding"] = e_excl.strip()
+        bucket = ranges.setdefault(product, [])
+        key = (
+            record["cve_id"],
+            record.get("versionStartIncluding"),
+            record.get("versionEndExcluding"),
+        )
+        if not any(
+            (
+                r["cve_id"],
+                r.get("versionStartIncluding"),
+                r.get("versionEndExcluding"),
+            )
+            == key
+            for r in bucket
+        ):
+            bucket.append(record)
+
+    return ranges
+
+
 def build_greenbone_cache_from_tsv(tsv_text: str) -> Dict[str, Any]:
     """gvmd postgres dump (TSV) -> {"versioned": {...}, "ranges": {}}.
 

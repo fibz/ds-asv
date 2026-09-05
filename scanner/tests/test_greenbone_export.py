@@ -7,6 +7,7 @@ import pytest
 from app.scoring.greenbone_export import (
     build_greenbone_cache,
     build_greenbone_cache_from_tsv,
+    build_greenbone_cache_ranges_from_tsv,
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "gmp_get_nvts.xml"
@@ -86,3 +87,31 @@ def test_tsv_builds_versioned_entries():
 
 def test_tsv_empty_yields_empty_cache():
     assert build_greenbone_cache_from_tsv("") == {"versioned": {}, "ranges": {}}
+
+
+RANGES_TSV = (
+    "cpe:/a:f5:nginx\tCVE-2021-23017\t0.6.18\t\t\t1.20.1\t7.7\n"
+    "cpe:/a:openssl:openssl\tCVE-2022-1292\t1.0.2\t\t\t3.0.2\t9.8\n"
+    "cpe:/a:vendor:prod\tCVE-START-EXCL\t\t0.5.0\t\t1.0.0\t5.0\n"
+    "cpe:/a:vendor:prod\tCVE-END-INCL\t1.0.0\t\t2.0.0\t\t5.0\n"
+    "not-a-cpe\tCVE-UNPARSEABLE\t1.0.0\t\t2.0.0\t5.0\n"
+)
+
+
+def test_ranges_tsv_builds_range_buckets():
+    ranges = build_greenbone_cache_ranges_from_tsv(RANGES_TSV)
+    assert [r["cve_id"] for r in ranges["nginx"]] == ["CVE-2021-23017"]
+    nginx = ranges["nginx"][0]
+    assert nginx["versionStartIncluding"] == "0.6.18"
+    assert nginx["versionEndExcluding"] == "1.20.1"
+    assert nginx["cvss_score"] == 7.7
+    assert [r["cve_id"] for r in ranges["openssl"]] == ["CVE-2022-1292"]
+    # start-exclusive / end-inclusive rows can't be expressed by the cache's
+    # _in_range (startIncluding/endExcluding only) -> skipped, never guessed
+    assert "prod" not in ranges
+    # unparseable criteria -> skipped
+    assert "not-a-cpe" not in ranges
+
+
+def test_ranges_tsv_empty_yields_empty():
+    assert build_greenbone_cache_ranges_from_tsv("") == {}
