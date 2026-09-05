@@ -350,8 +350,8 @@ def main() -> int:
         print(f"error: failed to build Greenbone cache: {exc}", file=sys.stderr)
         return 1
 
-    if not cache["versioned"]:
-        print("error: no CVE data parsed from the GMP export; leaving previous cache intact", file=sys.stderr)
+    if not cache["versioned"] and not cache["ranges"]:
+        print("error: no CVE data parsed from the input; leaving previous cache intact", file=sys.stderr)
         return 1
 
     target = _resolve_output(args.out)

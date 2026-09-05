@@ -6,9 +6,10 @@ is written by ``scripts/update_greenbone.py`` from Greenbone's GMP
 
 Lookup semantics:
 - exact ``<product>:<version>`` hit wins;
-- a bare ``<product>:`` key — an NVT whose CPE declares the product but not
-  the version, the common Greenbone case — matches ANY version;
-- else a ``ranges`` hit (future exporters may populate ranges);
+- else a ``ranges`` hit (version-precise affected ranges, e.g. the NVD
+  version-range data — wins over the coarse bare-product fallback below);
+- else a bare ``<product>:`` key — an NVT whose CPE declares the product
+  but not the version — matches ANY version;
 - else ``[]`` + warning. NEVER the demo table: that fallback belongs to
   CPEMapper, which the engine uses only when no Greenbone cache exists.
 """
@@ -85,12 +86,12 @@ class GreenboneSource:
         key = f"{product}:{version}"
         if key in self._versioned:
             return [_to_cve_data(r) for r in self._versioned[key]]
-        if f"{product}:" in self._versioned:
-            return [_to_cve_data(r) for r in self._versioned[f"{product}:"]]
         if self._ranges:
             staged = match_ranges(self._ranges, product, version or "")
             if staged:
                 return [_to_cve_data(r) for r in staged]
+        if f"{product}:" in self._versioned:
+            return [_to_cve_data(r) for r in self._versioned[f"{product}:"]]
         logger.warning("Greenbone cache miss for %s:%s", product, version)
         return []
 

@@ -63,23 +63,29 @@ def test_cvss_falls_back_to_severities_score_attribute():
 TSV = (
     "OpenSSL 3.0.1 advisory\tCVE-2022-1292\t9.8\tcpe:/a:openssl:openssl:3.0.1\n"
     "nginx advisory\tCVE-2021-23017, CVE-2022-41741\t7.7\tcpe:/a:nginx:nginx\n"
-    "heartbleed\tCVE-2014-0160\t7.5\tcpe:2.3:a:openssl:openssl:1.0.1:*:*:*:*:*:*:*\n"
+    "openssl advisory\tCVE-2022-1292\t9.8\tcpe:/a:openssl:openssl\n"
+    "heartbleed\tCVE-2014-0160\t7.5\tcpe:2.3:a:openssl:openssl:*:*:*:*:*:*:*\n"
     "no cve row\t  \t5.0\tcpe:/a:vendor:product\n"
     "no cpe row\tCVE-2020-0001\t5.0\tgarbage-not-a-cpe\n"
 )
 
 
-def test_tsv_builds_versioned_entries():
+def test_tsv_builds_product_level_entries_only():
     cache = build_greenbone_cache_from_tsv(TSV)
     versioned = cache["versioned"]
     assert cache["ranges"] == {}
-    assert [c["cve_id"] for c in versioned["openssl:3.0.1"]] == ["CVE-2022-1292"]
-    assert versioned["openssl:3.0.1"][0]["cvss_score"] == 9.8
+    # version-precise cpe rows are skipped — ranges carry version accuracy
+    assert "openssl:3.0.1" not in versioned
+    assert set(versioned.keys()) == {"nginx:", "openssl:"}
     assert [c["cve_id"] for c in versioned["nginx:"]] == [
         "CVE-2021-23017",
         "CVE-2022-41741",
     ]
-    assert [c["cve_id"] for c in versioned["openssl:1.0.1"]] == ["CVE-2014-0160"]
+    assert [c["cve_id"] for c in versioned["openssl:"]] == [
+        "CVE-2022-1292",
+        "CVE-2014-0160",
+    ]
+    assert versioned["openssl:"][0]["cvss_score"] == 9.8
     # rows without a CVE list or with an unparseable CPE are skipped
     assert "vendor:product" not in versioned
     assert not any(k.startswith("garbage") for k in versioned)
@@ -90,11 +96,11 @@ def test_tsv_empty_yields_empty_cache():
 
 
 RANGES_TSV = (
-    "cpe:/a:f5:nginx\tCVE-2021-23017\t0.6.18\t\t\t1.20.1\t7.7\n"
-    "cpe:/a:openssl:openssl\tCVE-2022-1292\t1.0.2\t\t\t3.0.2\t9.8\n"
-    "cpe:/a:vendor:prod\tCVE-START-EXCL\t\t0.5.0\t\t1.0.0\t5.0\n"
-    "cpe:/a:vendor:prod\tCVE-END-INCL\t1.0.0\t\t2.0.0\t\t5.0\n"
-    "not-a-cpe\tCVE-UNPARSEABLE\t1.0.0\t\t2.0.0\t5.0\n"
+    "cpe:/a:f5:nginx\tCVE-2021-23017\t0.6.18\t\\N\t\\N\t1.20.1\t7.7\n"
+    "cpe:/a:openssl:openssl\tCVE-2022-1292\t1.0.2\t\\N\t\\N\t3.0.2\t9.8\n"
+    "cpe:/a:vendor:prod\tCVE-START-EXCL\t\\N\t0.5.0\t\\N\t1.0.0\t5.0\n"
+    "cpe:/a:vendor:prod\tCVE-END-INCL\t1.0.0\t\\N\t2.0.0\t\\N\t5.0\n"
+    "not-a-cpe\tCVE-UNPARSEABLE\t1.0.0\t\\N\t\\N\t2.0.0\t5.0\n"
 )
 
 

@@ -119,3 +119,39 @@ def test_ranges_bucket_is_supported(tmp_path):
     path.write_text(json.dumps(cache), encoding="utf-8")
     source = GreenboneSource(str(path))
     assert [c.cve_id for c in source.lookup("openssl", "1.1.1")] == ["CVE-RANGE"]
+
+
+def test_ranges_win_over_bare_product_key(tmp_path):
+    cache = {
+        "versioned": {
+            "nginx:": [  # coarse product-level fallback
+                {
+                    "cve_id": "CVE-BARE",
+                    "title": "t",
+                    "description": "",
+                    "cvss_score": 5.0,
+                    "cvss_vector": "",
+                }
+            ]
+        },
+        "ranges": {
+            "nginx": [
+                {
+                    "cve_id": "CVE-2021-23017",
+                    "title": "t",
+                    "description": "",
+                    "cvss_score": 7.7,
+                    "cvss_vector": "",
+                    "versionStartIncluding": "0.6.18",
+                    "versionEndExcluding": "1.20.1",
+                }
+            ]
+        },
+    }
+    path = tmp_path / "nr.json"
+    path.write_text(json.dumps(cache), encoding="utf-8")
+    source = GreenboneSource(str(path))
+    # 1.18.0 falls inside the range -> version-precise range wins over bare
+    assert [c.cve_id for c in source.lookup("nginx", "1.18.0")] == ["CVE-2021-23017"]
+    # 1.27.0 is outside the range -> bare fallback applies
+    assert [c.cve_id for c in source.lookup("nginx", "1.27.0")] == ["CVE-BARE"]

@@ -134,6 +134,11 @@ def build_greenbone_cache_ranges_from_tsv(
     """
     ranges: Dict[str, List[Dict[str, Any]]] = {}
 
+    def _cell(value: str) -> str:
+        """psql prints NULL as ``\\N``; treat it as an empty cell."""
+        value = value.strip()
+        return "" if value in ("", "\\N") else value
+
     for line in tsv_text.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
@@ -141,10 +146,13 @@ def build_greenbone_cache_ranges_from_tsv(
         parts = line.split("\t")
         if len(parts) < 7:
             continue
-        criteria, cve, s_incl, s_excl, e_incl, e_excl, severity = parts[:7]
-        if s_excl.strip() or e_incl.strip():
+        criteria, cve = _cell(parts[0]), _cell(parts[1])
+        s_incl, s_excl = _cell(parts[2]), _cell(parts[3])
+        e_incl, e_excl = _cell(parts[4]), _cell(parts[5])
+        severity = _cell(parts[6])
+        if s_excl or e_incl:
             continue  # cannot express with startIncl/endExcl-only semantics
-        if not cve.strip().startswith("CVE-"):
+        if not cve.startswith("CVE-"):
             continue
         parsed = _parse_cpe(criteria)
         if not parsed:
@@ -153,20 +161,20 @@ def build_greenbone_cache_ranges_from_tsv(
         if version:
             continue  # versioned criteria rows are per-version enumeration
         try:
-            cvss_score = float(severity) if severity.strip() else 0.0
+            cvss_score = float(severity) if severity else 0.0
         except ValueError:
             cvss_score = 0.0
         record: Dict[str, Any] = {
-            "cve_id": cve.strip(),
-            "title": cve.strip(),
+            "cve_id": cve,
+            "title": cve,
             "description": "",
             "cvss_score": cvss_score,
             "cvss_vector": "",
         }
-        if s_incl.strip():
-            record["versionStartIncluding"] = s_incl.strip()
-        if e_excl.strip():
-            record["versionEndExcluding"] = e_excl.strip()
+        if s_incl:
+            record["versionStartIncluding"] = s_incl
+        if e_excl:
+            record["versionEndExcluding"] = e_excl
         bucket = ranges.setdefault(product, [])
         key = (
             record["cve_id"],
@@ -225,6 +233,12 @@ def build_greenbone_cache_from_tsv(tsv_text: str) -> Dict[str, Any]:
         if not parsed:
             continue
         product, version = parsed
+        if version:
+            # Version-precise (scap.cpes exact rows) matches are noisy in
+            # this data source — the version ranges (--ranges-tsv) carry
+            # the accurate affected-version set. Emit only product-level
+            # (bare) keys here; range lookups handle specific versions.
+            continue
         try:
             cvss_score = float(cvss_raw) if cvss_raw else 0.0
         except ValueError:
@@ -235,7 +249,7 @@ def build_greenbone_cache_from_tsv(tsv_text: str) -> Dict[str, Any]:
             "cvss_score": cvss_score,
             "cvss_vector": "",
         }
-        key = f"{product}:{version}" if version else f"{product}:"
+        key = f"{product}:"
         bucket = versioned.setdefault(key, [])
         for cve_id in cve_list:
             record = dict(base, cve_id=cve_id)

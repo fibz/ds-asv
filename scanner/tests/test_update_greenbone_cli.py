@@ -208,16 +208,14 @@ def test_nvts_page_request_paginates_offset():
 def test_cli_builds_cache_from_cpe_tsv(tmp_path):
     tsv = tmp_path / "nvts.tsv"
     tsv.write_text(
-        "OpenSSL advisory\tCVE-2022-1292\t9.8\tcpe:/a:openssl:openssl:3.0.1\n",
+        "OpenSSL advisory\tCVE-2022-1292\t9.8\tcpe:/a:openssl:openssl\n",
         encoding="utf-8",
     )
     out = tmp_path / "out.json"
     proc = _run("--cpe-tsv", str(tsv), "--out", str(out))
     assert proc.returncode == 0, proc.stderr
     cache = json.loads(out.read_text(encoding="utf-8"))
-    assert [c["cve_id"] for c in cache["versioned"]["openssl:3.0.1"]] == [
-        "CVE-2022-1292"
-    ]
+    assert [c["cve_id"] for c in cache["versioned"]["openssl:"]] == ["CVE-2022-1292"]
 
 
 def test_cli_merges_ranges_tsv_into_cache(tmp_path):
