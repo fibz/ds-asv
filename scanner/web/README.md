@@ -58,8 +58,9 @@ flags Playwright as the natural follow-up).
 - SARs download as files (spec open item: no in-app viewer). A plain `<a
   href>` would drop the bearer token, so `api/sar.ts` fetches with the
   Authorization header and hands the blob to the browser.
-- "Create scan" on the Scans page routes operators to the dependency-free
-  `/portal` flow (the dashboard does not duplicate onboarding/wizards, spec
-  §7 out-of-scope).
+- Operators create scans in-app via the "New scan" dialog on `/scans`
+  (customer, targets within approved scope, auth method, scan type → `POST
+  /v1/scans`), then watch live status on the scan's detail page. Onboarding
+  new customers stays on the dependency-free `/portal` (spec §7 out-of-scope).
 - The activity feed derives events client-side from the scan list (the API
   has no transition log), matching the plan's "computed client-side".
