@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { listCustomers } from "../api/customers";
 import { listScans } from "../api/scans";
 import { useAuth } from "../auth/store";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorState } from "../components/ErrorState";
+import { NewScanDialog } from "../components/NewScanDialog";
 import { ScanTable } from "../components/ScanTable";
 import { SEVERITY_ORDER } from "../lib/severity";
 import type { ScanHistoryItem, Severity } from "../api/types";
@@ -77,7 +78,9 @@ export function ScansPage() {
   const role = useAuth((s) => s.role);
   const isOperator = role === "operator";
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [showNew, setShowNew] = useState(false);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const scansQuery = useQuery({
     queryKey: ["scans", "list"],
@@ -96,6 +99,15 @@ export function ScansPage() {
 
   function set<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function onScanCreated(scanId: string) {
+    setShowNew(false);
+    // Show the new scan immediately everywhere (list, strip, histogram).
+    void queryClient.invalidateQueries({ queryKey: ["scans", "list"] });
+    void queryClient.invalidateQueries({ queryKey: ["scans", "watch"] });
+    void queryClient.invalidateQueries({ queryKey: ["scans", "activity"] });
+    navigate(`/scans/${encodeURIComponent(scanId)}`);
   }
 
   if (scansQuery.isError) {
@@ -125,13 +137,20 @@ export function ScansPage() {
         {isOperator && (
           <button
             type="button"
-            onClick={() => navigate("/portal")}
+            onClick={() => setShowNew(true)}
             className="rounded bg-accent px-4 py-2 text-sm font-semibold text-surface transition hover:brightness-110"
           >
-            Create scan
+            New scan
           </button>
         )}
       </div>
+      {showNew && isOperator && customersQuery.data && (
+        <NewScanDialog
+          customers={customersQuery.data}
+          onCreated={onScanCreated}
+          onClose={() => setShowNew(false)}
+        />
+      )}
 
       <form
         className="flex flex-wrap items-end gap-3 rounded-lg border border-edge bg-panel px-4 py-3"
