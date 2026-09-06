@@ -143,3 +143,37 @@ class SarDownloadResponse(BaseModel):
     scan_id: str
     download_url: str
     format: str  # pdf | html
+
+
+# ---------------------------------------------------------------------------
+# Dashboard (scanner/web) additions — design spec §6
+# ---------------------------------------------------------------------------
+
+
+class MeResponse(BaseModel):
+    role: str  # "operator" | "qsa"
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+
+
+class ScopeAuditResponse(BaseModel):
+    id: str
+    customer_id: str
+    previous_scope: str
+    new_scope: str
+    authorization_method: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FindingSuppressRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class FindingSuppressResponse(BaseModel):
+    id: str
+    is_suppressed: bool
+    suppression_reason: Optional[str]
+
+    model_config = {"from_attributes": True}

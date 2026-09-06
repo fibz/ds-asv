@@ -59,3 +59,4 @@ portal/node_modules
 
 # Host-local scanner tooling (installed per AGENTS.md, not committed)
 scanner/scripts/testssl.sh-*/
+.venv

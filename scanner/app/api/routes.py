@@ -9,12 +9,20 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, verify_bearer_token
+from app.api.deps import (
+    Identity,
+    get_db_session,
+    get_identity,
+    verify_bearer_token,
+)
 from app.api.schemas import (
     CustomerCreate,
     CustomerOnboarding,
     CustomerResponse,
     FindingResponse,
+    FindingSuppressRequest,
+    FindingSuppressResponse,
+    MeResponse,
     PortServiceEvidence,
     ScanDetailResponse,
     ScanHistoryItem,
@@ -22,6 +30,7 @@ from app.api.schemas import (
     ScanResponse,
     ScanStatusResponse,
     ScanTargetDetail,
+    ScopeAuditResponse,
 )
 from app.models.customer import Customer
 from app.models.finding import Finding
@@ -492,8 +501,101 @@ def download_sar(
 
 
 # ---------------------------------------------------------------------------
-# Health check
+# Dashboard (scanner/web) — design spec §6
 # ---------------------------------------------------------------------------
+
+
+@router.get("/me", response_model=MeResponse)
+def get_me(identity: Identity = Depends(get_identity)):
+    """Return the caller's role and (for QSA) customer scope from the token."""
+    return MeResponse(
+        role=identity.role,
+        customer_id=identity.customer_id,
+        customer_name=identity.customer_name,
+    )
+
+
+@router.get("/scans", response_model=List[ScanHistoryItem])
+def list_all_scans(
+    response: Response,
+    limit: int = 50,
+    db: Session = Depends(get_db_session),
+    identity: Identity = Depends(get_identity),
+):
+    """Top-level scan list across all customers (operator), or the QSA
+    customer's scans when the token carries a customer scope."""
+    response.headers["Cache-Control"] = "no-store"
+    limit = max(1, min(limit, 200))
+    q = db.query(Scan)
+    if identity.role != "operator":
+        if not identity.customer_id:
+            raise HTTPException(
+                status_code=403, detail="QSA token has no customer scope"
+            )
+        q = q.filter(Scan.customer_id == identity.customer_id)
+    scans = q.order_by(Scan.created_at.desc()).limit(limit).all()
+    return [
+        ScanHistoryItem(
+            scan_id=scan.id,
+            status=scan.status,
+            scan_type=scan.scan_type,
+            overall_result=scan.overall_result,
+            submitted_at=scan.created_at,
+            completed_at=scan.completed_at,
+            targets=[t.hostname for t in scan.targets],
+        )
+        for scan in scans
+    ]
+
+
+@router.get(
+    "/customers/{customer_id}/scope-audit", response_model=List[ScopeAuditResponse]
+)
+def get_customer_scope_audit(
+    customer_id: str,
+    response: Response,
+    db: Session = Depends(get_db_session),
+    identity: Identity = Depends(get_identity),
+):
+    """Append-only scope-change audit for one customer (operator only)."""
+    if identity.role != "operator":
+        raise HTTPException(status_code=403, detail="Operator only")
+    response.headers["Cache-Control"] = "no-store"
+    events = (
+        db.query(ScopeAuditEvent)
+        .filter(ScopeAuditEvent.customer_id == customer_id)
+        .order_by(ScopeAuditEvent.created_at.desc())
+        .all()
+    )
+    return events
+
+
+@router.patch("/findings/{finding_id}/suppress", response_model=FindingSuppressResponse)
+def suppress_finding(
+    finding_id: str,
+    body: FindingSuppressRequest,
+    db: Session = Depends(get_db_session),
+    identity: Identity = Depends(get_identity),
+):
+    """Mark a finding suppressed (QSA scoped to their customer; operator any)."""
+    finding = db.query(Finding).filter(Finding.id == finding_id).first()
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    if identity.role != "operator":
+        if not identity.customer_id:
+            raise HTTPException(
+                status_code=403, detail="QSA token has no customer scope"
+            )
+        scan = db.query(Scan).filter(Scan.id == finding.scan_id).first()
+        if scan is None or scan.customer_id != identity.customer_id:
+            raise HTTPException(
+                status_code=403, detail="Finding not in your customer scope"
+            )
+    finding.is_suppressed = True
+    finding.suppression_reason = body.reason
+    db.commit()
+    db.refresh(finding)
+    return finding
 
 
 @router.get("/health")
