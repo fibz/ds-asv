@@ -8,6 +8,7 @@ import { HomeGate, RequireAuth, RequireRole } from "./auth/guard";
 import { CustomersPage } from "./pages/Customers";
 import { LoginPage } from "./pages/Login";
 import { NotFoundPage } from "./pages/NotFound";
+import { ScanDetailPage } from "./pages/ScanDetail";
 import { ScansPage } from "./pages/Scans";
 
 const router = createBrowserRouter([
@@ -21,6 +22,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <HomeGate /> },
       { path: "scans", element: <ScansPage /> },
+      { path: "scans/:scanId", element: <ScanDetailPage /> },
       {
         path: "customers",
         element: (
