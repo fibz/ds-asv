@@ -17,8 +17,11 @@ export function NewScanDialog({
   onCreated: (scanId: string) => void;
   onClose: () => void;
 }) {
-  const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
-  const [targets, setTargets] = useState("");
+  // Preselect the first scannable (demo) customer so "Start scan" works with
+  // zero ceremony; fall back to the first customer in the list.
+  const demo = customers.find((c) => c.scope_ips?.includes("127.0.0.1"));
+  const [customerId, setCustomerId] = useState((demo ?? customers[0])?.id ?? "");
+  const [targets, setTargets] = useState("127.0.0.1");
   const [authMethod, setAuthMethod] = useState("none");
   const [credentialsRef, setCredentialsRef] = useState("");
   const [scanType, setScanType] = useState("quarterly");
