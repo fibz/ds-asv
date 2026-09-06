@@ -10,6 +10,15 @@ export const SEVERITY_COLORS: Record<Severity, string> = {
   info: "#596579",
 };
 
+/** Mono glyph per severity (spec §3.4): ▲ critical, ● high, ◆ medium, ▪ low, — info. */
+export const SEVERITY_GLYPH: Record<Severity, string> = {
+  critical: "▲",
+  high: "●",
+  medium: "◆",
+  low: "▪",
+  info: "—",
+};
+
 export const SEVERITY_ORDER: Severity[] = [
   "critical",
   "high",
