@@ -76,3 +76,11 @@ def verify_bearer_token(authorization: str | None = Header(None)) -> str:
 def get_identity(authorization: str | None = Header(None)) -> Identity:
     """Dashboard dependency: the caller's resolved role + scope."""
     return resolve_identity(authorization)
+
+
+def require_operator(authorization: str | None = Header(None)) -> Identity:
+    """Operator-only dependency: QSA/customer tokens are refused (spec §2)."""
+    identity = resolve_identity(authorization)
+    if identity.role != "operator":
+        raise HTTPException(status_code=403, detail="Operator only")
+    return identity

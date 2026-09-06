@@ -13,7 +13,7 @@ from app.api.deps import (
     Identity,
     get_db_session,
     get_identity,
-    verify_bearer_token,
+    require_operator,
 )
 from app.api.schemas import (
     CustomerCreate,
@@ -170,7 +170,7 @@ def _scan_severity_counts(
 def create_customer(
     req: CustomerCreate,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     customer = Customer(
         name=req.name,
@@ -190,7 +190,7 @@ def list_customers(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     return db.query(Customer).offset(skip).limit(limit).all()
 
@@ -199,7 +199,7 @@ def list_customers(
 def get_customer(
     customer_id: str,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
@@ -212,7 +212,7 @@ def check_customer_scope(
     customer_id: str,
     target: str,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     """Check one target against persisted scope without creating a scan."""
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
@@ -237,7 +237,7 @@ def list_customer_scans(
     response: Response,
     limit: int = 50,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     """Return persisted scan history for one selected customer."""
     response.headers["Cache-Control"] = "no-store"
@@ -275,7 +275,7 @@ def list_customer_scans(
 def onboard_customer(
     req: CustomerOnboarding,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     """Create a customer whose confirmed CIDRs become its approved scan scope."""
     if not req.authorization_confirmed:
@@ -326,6 +326,17 @@ def onboard_customer(
     return customer
 
 
+def _visible_scan(db: Session, scan_id: str, identity: Identity):
+    """Fetch a scan a caller may read: QSA tokens are limited to their own
+    customer's scans (spec §2 — server-enforced, not just UI-hidden)."""
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if identity.role != "operator" and scan.customer_id != identity.customer_id:
+        raise HTTPException(status_code=403, detail="Not in your customer scope")
+    return scan
+
+
 # ---------------------------------------------------------------------------
 # Scan routes
 # ---------------------------------------------------------------------------
@@ -336,7 +347,7 @@ def enqueue_scan(
     req: ScanRequest,
     background: BackgroundTasks,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     """Enqueue a new ASV scan. Creates scan + target records, then dispatches tasks."""
     customer = db.query(Customer).filter(Customer.id == req.customer_id).first()
@@ -407,11 +418,9 @@ def enqueue_scan(
 def get_scan_status(
     scan_id: str,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    identity: Identity = Depends(get_identity),
 ):
-    scan = db.query(Scan).filter(Scan.id == scan_id).first()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = _visible_scan(db, scan_id, identity)
     return ScanStatusResponse(
         scan_id=scan.id,
         status=scan.status,
@@ -429,13 +438,11 @@ def get_scan_details(
     scan_id: str,
     response: Response,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    identity: Identity = Depends(get_identity),
 ):
     """Return curated persisted evidence; never expose raw artifacts or logs."""
     response.headers["Cache-Control"] = "no-store"
-    scan = db.query(Scan).filter(Scan.id == scan_id).first()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = _visible_scan(db, scan_id, identity)
 
     targets = []
     for target in scan.targets:
@@ -494,8 +501,9 @@ def list_findings(
     severity: str | None = None,
     source: str | None = None,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    identity: Identity = Depends(get_identity),
 ):
+    _visible_scan(db, scan_id, identity)
     query = db.query(Finding).filter(Finding.scan_id == scan_id)
     if severity:
         query = query.filter(Finding.severity == severity)
@@ -508,12 +516,10 @@ def list_findings(
 def download_sar(
     scan_id: str,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    identity: Identity = Depends(get_identity),
 ):
     """Download PCI-compliant Scan Attestation Report (SAR)."""
-    scan = db.query(Scan).filter(Scan.id == scan_id).first()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = _visible_scan(db, scan_id, identity)
 
     if scan.status != ScanStatus.COMPLETED:
         raise HTTPException(
@@ -590,11 +596,9 @@ def get_customer_scope_audit(
     customer_id: str,
     response: Response,
     db: Session = Depends(get_db_session),
-    identity: Identity = Depends(get_identity),
+    _identity: Identity = Depends(require_operator),
 ):
     """Append-only scope-change audit for one customer (operator only)."""
-    if identity.role != "operator":
-        raise HTTPException(status_code=403, detail="Operator only")
     response.headers["Cache-Control"] = "no-store"
     events = (
         db.query(ScopeAuditEvent)
