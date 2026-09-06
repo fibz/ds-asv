@@ -7,7 +7,7 @@ from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import (
     Identity,
@@ -221,6 +221,7 @@ def list_customer_scans(
     limit = max(1, min(limit, 100))
     scans = (
         db.query(Scan)
+        .options(joinedload(Scan.customer))
         .filter(Scan.customer_id == customer_id)
         .order_by(Scan.created_at.desc())
         .limit(limit)
@@ -235,6 +236,8 @@ def list_customer_scans(
             submitted_at=scan.created_at,
             completed_at=scan.completed_at,
             targets=[target.hostname for target in scan.targets],
+            customer_id=scan.customer_id,
+            customer_name=scan.customer.name if scan.customer else None,
         )
         for scan in scans
     ]
@@ -526,7 +529,7 @@ def list_all_scans(
     customer's scans when the token carries a customer scope."""
     response.headers["Cache-Control"] = "no-store"
     limit = max(1, min(limit, 200))
-    q = db.query(Scan)
+    q = db.query(Scan).options(joinedload(Scan.customer))
     if identity.role != "operator":
         if not identity.customer_id:
             raise HTTPException(
@@ -543,6 +546,8 @@ def list_all_scans(
             submitted_at=scan.created_at,
             completed_at=scan.completed_at,
             targets=[t.hostname for t in scan.targets],
+            customer_id=scan.customer_id,
+            customer_name=scan.customer.name if scan.customer else None,
         )
         for scan in scans
     ]

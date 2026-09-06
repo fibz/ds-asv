@@ -81,6 +81,8 @@ class ScanHistoryItem(BaseModel):
     submitted_at: datetime
     completed_at: Optional[datetime]
     targets: List[str]
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
 
 
 class PortServiceEvidence(BaseModel):
@@ -125,10 +127,13 @@ class FindingResponse(BaseModel):
     description: Optional[str]
     severity: str
     cvss_score: Optional[float]
+    cvss_vector: Optional[str] = None
     source: str
     pci_fail: bool
     confidence: str
     is_suppressed: bool
+    suppression_reason: Optional[str] = None
+    raw_evidence: Optional[str] = None  # JSON blob string (Inspector viewer)
     created_at: datetime
 
     model_config = {"from_attributes": True}
