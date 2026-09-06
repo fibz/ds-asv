@@ -31,6 +31,7 @@ function headerValue(label: string, value: ReactNode) {
 export function ScanDetailPage() {
   const { scanId = "" } = useParams();
   const role = useAuth((s) => s.role);
+  const qsaCustomerName = useAuth((s) => s.customerName);
   const [selected, setSelected] = useState<Finding | null>(null);
   const [sarBusy, setSarBusy] = useState(false);
 
@@ -75,7 +76,9 @@ export function ScanDetailPage() {
   if (!scan) return null;
 
   const customerName =
-    scansQuery.data?.find((s) => s.scan_id === scanId)?.customer_name ?? null;
+    role === "operator"
+      ? scansQuery.data?.find((s) => s.scan_id === scanId)?.customer_name ?? null
+      : qsaCustomerName;
   const details = detailsQuery.data;
   const findings = findingsQuery.data ?? [];
   const isCompleted = scan.status === "completed";
