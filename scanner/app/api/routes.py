@@ -3,7 +3,7 @@
 import ipaddress
 import json
 import logging
-from typing import List
+from typing import Dict, List, Sequence
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy import func
@@ -140,6 +140,32 @@ def _normalize_narrow_cidrs(entries: List[str]) -> List[str]:
     return normalized
 
 
+def _scan_severity_counts(
+    db: Session, scan_ids: Sequence[str]
+) -> Dict[str, Dict[str, int]]:
+    """Map scan_id -> {severity: finding count} for a scan list.
+
+    One grouped query so the dashboard's per-scan severity tally and the 7-day
+    Watch histogram can be computed client-side without N+1 fetches.
+    """
+    if not scan_ids:
+        return {}
+    rows = (
+        db.query(Finding.scan_id, Finding.severity, func.count(Finding.id))
+        .filter(Finding.scan_id.in_(scan_ids))
+        .group_by(Finding.scan_id, Finding.severity)
+        .all()
+    )
+    counts: Dict[str, Dict[str, int]] = {
+        sid: {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+        for sid in scan_ids
+    }
+    for scan_id, severity, count in rows:
+        if scan_id in counts and severity in counts[scan_id]:
+            counts[scan_id][severity] = count
+    return counts
+
+
 @router.post("/customers", response_model=CustomerResponse, status_code=201)
 def create_customer(
     req: CustomerCreate,
@@ -227,6 +253,7 @@ def list_customer_scans(
         .limit(limit)
         .all()
     )
+    counts = _scan_severity_counts(db, [scan.id for scan in scans])
     return [
         ScanHistoryItem(
             scan_id=scan.id,
@@ -238,6 +265,7 @@ def list_customer_scans(
             targets=[target.hostname for target in scan.targets],
             customer_id=scan.customer_id,
             customer_name=scan.customer.name if scan.customer else None,
+            severity_counts=counts.get(scan.id),
         )
         for scan in scans
     ]
@@ -537,6 +565,7 @@ def list_all_scans(
             )
         q = q.filter(Scan.customer_id == identity.customer_id)
     scans = q.order_by(Scan.created_at.desc()).limit(limit).all()
+    counts = _scan_severity_counts(db, [scan.id for scan in scans])
     return [
         ScanHistoryItem(
             scan_id=scan.id,
@@ -548,6 +577,7 @@ def list_all_scans(
             targets=[t.hostname for t in scan.targets],
             customer_id=scan.customer_id,
             customer_name=scan.customer.name if scan.customer else None,
+            severity_counts=counts.get(scan.id),
         )
         for scan in scans
     ]

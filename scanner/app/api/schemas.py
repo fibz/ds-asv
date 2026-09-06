@@ -1,7 +1,7 @@
 """Pydantic request/response schemas."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -83,6 +83,7 @@ class ScanHistoryItem(BaseModel):
     targets: List[str]
     customer_id: Optional[str] = None
     customer_name: Optional[str] = None
+    severity_counts: Optional[Dict[str, int]] = None
 
 
 class PortServiceEvidence(BaseModel):
