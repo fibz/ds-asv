@@ -26,6 +26,12 @@ function bearerRequest(token: string) {
   });
 }
 
+function cookieRequest(token: string) {
+  return new NextRequest("http://localhost/dashboard", {
+    headers: { Cookie: `asv_session=${token}`, "user-agent": "vitest" },
+  });
+}
+
 async function adminWipe(): Promise<void> {
   const admin = new Client({ connectionString: process.env.ADMIN_DATABASE_URL! });
   await admin.connect();
@@ -73,5 +79,17 @@ describe("session enforcement in auth", () => {
     expect(await tenantContextFromRequest(bearerRequest("tok-2"))).toBeNull();
     // a different (fresh) token still works
     expect(await tenantContextFromRequest(bearerRequest("tok-3"))).not.toBeNull();
+  });
+
+  it("a session cookie (no Authorization header) records into the registry", async () => {
+    const ctx = await tenantContextFromRequest(cookieRequest("cookie-tok-1"));
+    expect(ctx?.organizationId).toBe(ORG);
+    const rows = await withTenant(ORG, (tx) => tx.session.findMany({ where: { tokenHash: hashToken("cookie-tok-1") } }));
+    expect(rows).toHaveLength(1);
+    // Revocation via the registry blocks the SAME cookie on the next request.
+    await revokeSession(ctx!, rows[0].id, "cookie revoke");
+    expect(await tenantContextFromRequest(cookieRequest("cookie-tok-1"))).toBeNull();
+    // A fresh cookie still authenticates.
+    expect(await tenantContextFromRequest(cookieRequest("cookie-tok-2"))).not.toBeNull();
   });
 });

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma-client";
 import { setRlsContext } from "@/lib/tenant";
 import { recordAudit } from "@/lib/audit";
+import { sessionTokenFromRequest } from "@/lib/auth/session-cookie";
 import type { TenantContext } from "@/lib/tenant";
 import type { Prisma, Session } from "@/lib/generated/prisma";
 
@@ -67,6 +68,13 @@ export async function getSession(ctx: TenantContext, sessionId: string): Promise
   );
 }
 
+/** The org-scoped session row for a raw token hash, or null (RLS-scoped). */
+export async function findSessionByTokenHash(ctx: TenantContext, tokenHash: string): Promise<Session | null> {
+  return withTenant(ctx.organizationId, (tx) =>
+    tx.session.findFirst({ where: { tokenHash } })
+  );
+}
+
 export async function revokeSession(
   ctx: TenantContext,
   sessionId: string,
@@ -93,18 +101,18 @@ export async function isSessionBlocked(organizationId: string, tokenHash: string
   });
 }
 
-/** Derives session metadata from a request: sha256 of the Bearer token. */
+/** Derives session metadata from a request: sha256 of the session token
+ * (Authorization Bearer or the portal session cookie). */
 export function sessionMetaFromRequest(request: {
   headers: { get(name: string): string | null };
 }): { tokenHash: string; userAgent?: string; ipHash?: string } | null {
-  const auth = request.headers.get("authorization") ?? "";
-  const match = /^Bearer\s+(.+)$/i.exec(auth);
-  if (!match) return null;
+  const token = sessionTokenFromRequest(request);
+  if (!token) return null;
   const userAgent = request.headers.get("user-agent") ?? undefined;
   const forwarded = request.headers.get("x-forwarded-for") ?? undefined;
   const ip = forwarded?.split(",")[0]?.trim();
   return {
-    tokenHash: hashToken(match[1]),
+    tokenHash: hashToken(token),
     userAgent,
     ipHash: ip ? hashIp(ip) : undefined,
   };

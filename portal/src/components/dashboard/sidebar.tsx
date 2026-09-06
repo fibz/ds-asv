@@ -48,6 +48,19 @@ export function DashboardSidebar() {
             </Link>
           ))}
         </nav>
+        <div className="px-6 py-4 border-t border-gray-200">
+          <button
+            type="button"
+            onClick={() => {
+              void fetch("/api/auth/logout", { method: "POST" }).then(() => {
+                window.location.href = "/sign-in";
+              });
+            }}
+            className="w-full px-3 py-2 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+          >
+            Sign out
+          </button>
+        </div>
       </div>
     </div>
   );

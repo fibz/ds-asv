@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma-client";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { sessionTokenFromRequest } from "@/lib/auth/session-cookie";
 
 export interface KeycloakUser {
   idpId: string;
@@ -136,23 +137,21 @@ export async function provisionUserFromToken(
 }
 
 /**
- * Extracts the Bearer token from a request's Authorization header, or null
- * when the header is absent or not a Bearer scheme.
+ * Extracts the session token from a request: the Authorization Bearer header
+ * first, else the portal session cookie (set by the Keycloak code-flow login
+ * — src/lib/auth/session-cookie.ts). Server components' headers() include the
+ * Cookie header, so dashboard pages authenticate via the cookie automatically.
  */
 function getBearerToken(request: {
   headers: { get(name: string): string | null };
 }): string | null {
-  const header = request.headers.get("authorization");
-  if (!header) return null;
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  return match ? match[1] : null;
+  return sessionTokenFromRequest(request);
 }
 
 /**
- * Resolves the calling user from a route handler's `Authorization: Bearer`
- * header. Returns null when the header is absent, malformed, or the token
- * fails verification. (Real Keycloak cookie-session integration is a later
- * deployment concern; header-based verification is the testable contract.)
+ * Resolves the calling user from a request's Authorization Bearer header or
+ * session cookie. Returns null when neither is present or the token fails
+ * verification.
  */
 export async function getKeycloakUser(request: {
   headers: { get(name: string): string | null };
