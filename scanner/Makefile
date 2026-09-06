@@ -1,4 +1,4 @@
-.PHONY: install test test-integration lint scan-example build-images deploy-staging vault-dev vault-configure
+.PHONY: install test test-integration lint refresh-greenbone scan-example build-images deploy-staging vault-dev vault-configure
 
 PYTHON = python3.13
 VENV = .venv
@@ -34,6 +34,12 @@ scan-example:
 build-images:
 	docker build -t asv-scanner:latest -f Dockerfile .
 	docker build -t asv-scanner-winrm:latest -f Dockerfile.winrm .
+
+# Scheduled Greenbone cache refresh: pull the two documented gvmd-postgres
+# dumps and rebuild the cache atomically (fails loud, never clobbers).
+# Requires GREENBONE_PG_HOST etc. — see scripts/refresh_greenbone_cache.sh.
+refresh-greenbone:
+	scripts/refresh_greenbone_cache.sh
 
 deploy-staging:
 	cd infra/terraform && terraform workspace select staging

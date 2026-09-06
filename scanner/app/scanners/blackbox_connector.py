@@ -19,7 +19,7 @@ import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("asv.scanner.blackbox")
 
@@ -162,13 +162,17 @@ class BlackBoxScanner:
             product = (port_info or {}).get("product", "")
             version = (port_info or {}).get("version", "")
             service_version = (product + " " + version).strip() or version
-            banners.append(
-                {
-                    "service": service,
-                    "version": service_version or "unknown",
-                    "port": int(port),
-                }
-            )
+            banner: Dict[str, Any] = {
+                "service": service,
+                "version": service_version or "unknown",
+                "port": int(port),
+            }
+            # Carry nmap's product detection separately so the CVE lookup can
+            # resolve it to a cache product key instead of missing the cache
+            # under the transport service label (banner_aliases).
+            if product:
+                banner["product"] = product
+            banners.append(banner)
         hostnames = host.hostnames()
         return ScanResult(
             "COMPLETED",

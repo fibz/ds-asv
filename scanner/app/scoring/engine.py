@@ -4,6 +4,7 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
+from app.scoring.banner_aliases import banner_lookup
 from app.scoring.base import CVESource
 from app.scoring.cpe_mapper import CPEMapper
 from app.scoring.greenbone_source import DEFAULT_FEED_PATH, GreenboneSource
@@ -93,14 +94,19 @@ class ASVScoringEngine:
         confidence = self.CONFIDENCE_MAP.get("unauthenticated_banner", 0.6)
 
         for banner in banner_data:
-            cves = self.cve_source.lookup(service_name, banner.get("version") or "")
+            # The service label nmap assigns ("https") is NOT the CVE cache
+            # product ("nginx"). Resolve banner product → cache key first so
+            # banner CVEs actually hit the Greenbone/NVD cache (banner_aliases).
+            product, version = banner_lookup(banner, service_name)
+            cves = self.cve_source.lookup(product, version)
+            label = product or service_name
             for cve in cves:
                 cvss = cve.cvss_score
                 pci_fail = cvss >= self.PCI_FAIL_THRESHOLD
 
                 findings.append(
                     ScoredFinding(
-                        title=f"{service_name} — {cve.title or 'Unknown CVE'}",
+                        title=f"{label} — {cve.title or 'Unknown CVE'}",
                         description=cve.description,
                         cve_id=cve.cve_id or None,
                         cvss_score=cvss,

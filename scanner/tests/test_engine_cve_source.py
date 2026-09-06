@@ -72,3 +72,71 @@ def test_engine_uses_greenbone_source_end_to_end(tmp_path, monkeypatch):
     )
     assert any(f.cve_id == "CVE-2022-1292" for f in findings)
     assert findings[0].severity == "critical"
+
+
+def test_banner_scoring_resolves_product_alias_into_cache(tmp_path, monkeypatch):
+    """Banner service 'https' + product 'nginx' must hit the nginx cache
+    entries — pre-alias the engine looked up product='https' and missed."""
+    cache = tmp_path / "greenbone_cves.json"
+    cache.write_text(
+        json.dumps(
+            {
+                "versioned": {
+                    "nginx:": [
+                        {
+                            "cve_id": "CVE-2021-23017",
+                            "title": "t",
+                            "description": "",
+                            "cvss_score": 9.1,
+                            "cvss_vector": "",
+                        }
+                    ]
+                },
+                "ranges": {
+                    "nginx": [
+                        {
+                            "cve_id": "CVE-2021-23017",
+                            "title": "t",
+                            "description": "",
+                            "cvss_score": 9.1,
+                            "cvss_vector": "",
+                            "versionStartIncluding": "1.16.0",
+                            "versionEndExcluding": "1.22.0",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GREENBONE_FEED_PATH", str(cache))
+    engine = ASVScoringEngine()
+    findings = engine.score_unauthenticated(
+        [
+            {
+                "service": "https",
+                "product": "nginx",
+                "version": "nginx 1.18.0",
+                "port": 443,
+            }
+        ],
+        "https",
+    )
+    assert [f.cve_id for f in findings] == ["CVE-2021-23017"]
+    assert findings[0].severity == "critical"
+    assert findings[0].requires_dispute is True  # banner confidence 0.6 < 0.8
+
+
+def test_banner_scoring_without_product_keeps_previous_lookup(tmp_path, monkeypatch):
+    """A transport-only banner (no product detection) keeps the group-service
+    label as the lookup product — pre-existing semantics, no invention."""
+    cache = tmp_path / "greenbone_cves.json"
+    cache.write_text(json.dumps({"versioned": {}, "ranges": {}}), encoding="utf-8")
+    monkeypatch.setenv("GREENBONE_FEED_PATH", str(cache))
+    engine = ASVScoringEngine()
+    assert (
+        engine.score_unauthenticated(
+            [{"service": "https", "version": "TLSv1.2", "port": 443}], "https"
+        )
+        == []
+    )
