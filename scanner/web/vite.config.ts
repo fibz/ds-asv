@@ -1,13 +1,17 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
+// Dev proxy target: the scanner FastAPI. Override with VITE_API_PROXY_TARGET
+// (e.g. when :8000 is occupied); defaults to localhost:8000.
+const apiTarget = process.env.VITE_API_PROXY_TARGET ?? "http://localhost:8000";
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/v1": "http://localhost:8000",
-      "/portal": "http://localhost:8000",
+      "/v1": apiTarget,
+      "/portal": apiTarget,
     },
   },
   test: {
