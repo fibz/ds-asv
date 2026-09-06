@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import "./tokens.css";
 import { AppLayout } from "./App";
 import { HomeGate, RequireAuth, RequireRole } from "./auth/guard";
+import { CustomerDetailPage } from "./pages/CustomerDetail";
 import { CustomersPage } from "./pages/Customers";
 import { LoginPage } from "./pages/Login";
 import { NotFoundPage } from "./pages/NotFound";
@@ -28,6 +29,14 @@ const router = createBrowserRouter([
         element: (
           <RequireRole role="operator">
             <CustomersPage />
+          </RequireRole>
+        ),
+      },
+      {
+        path: "customers/:customerId",
+        element: (
+          <RequireRole role="operator">
+            <CustomerDetailPage />
           </RequireRole>
         ),
       },
