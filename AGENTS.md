@@ -29,6 +29,52 @@
   - ✅ Greenbone CVE source — `CVESource` seam + `GreenboneSource` cache reader + GMP export pipeline (Phase 7); scheduled refresh script + make target added (follow-up DONE)
   - ✅ Secret bootstrap guards — portal instrumentation + scanner create_app refuse placeholder/dev creds in prod (follow-up DONE)
 - **Scanner Dashboard DONE (2026-09-06, branch `scanner-dashboard` @ `1387d97`, pending merge-to-main review):** React+Vite dashboard at `scanner/web/` per `docs/superpowers/plans/2026-09-06-asv-scanner-dashboard-plan.md` (spec: `docs/superpowers/specs/2026-09-06-asv-scanner-dashboard-design.md`). All 8 plan phases implemented + verified: Phase 1 shell; Phase 2 auth (Zustand store persisted to localStorage, /v1/me client, login page, RequireAuth/RequireRole guards, role-aware Rail/TopBar) + backend (identity `/v1/me`, top-level `/v1/scans`, scope-audit, finding suppress — commits `a4477f3`); Phase 3 typed API client (`api/{client,me,customers,scans,findings,sar}.ts` + `types.ts`); Phase 4 Watch (ScanStrip 2.5s poll, hand-rolled 7-day severity histogram, activity feed); Phase 5 Scans list (client filters + sortable dense table, severity glyphs, PCI bar); Phase 6 scan detail (targets/ports, findings + Inspector w/ QSA suppression, SAR blob download gated to completed); Phase 7 Customers list/detail incl. scope CIDRs + audit timeline; Phase 8 polish (focus rings, reduced-motion, empty/error states) + **50 vitest tests** + README. Backend response additions: `ScanHistoryItem.customer_id/customer_name/severity_counts` and `FindingResponse.cvss_vector/raw_evidence/suppression_reason` (spec §6.2 + §3.5 gaps). Gates: web `tsc -b` clean, oxlint 0/0, `npm run test` 50 passed, `npm run build` passes; scanner `make lint` clean + `make test` 86 passed; **live-verified** (fixture postgres + real uvicorn): operator/QSA `/v1/me`, operator scan list w/ customer + severity counts, QSA scoping 403/empty, scope-audit, finding suppress round-trip, SAR 200. Notes: lint gate is oxlint (plan said eslint; scaffold adopted oxlint — flagged for review); QSA token issuance stays a follow-up (`API_QSA_TOKEN` env opt-in); `npm run dev` proxies `/v1` to :8000. Open Greenbone threads: NVT-detailed `get_nvts` path (blocked on gvmd serving — revisit when fixed); openssl 3.0.1 range-set semantics note.
+## ⏸ PAUSED — dashboard rethink checkpoint (2026-09-06, branch `scanner-dashboard` @ `a44bd54`)
+
+User stepped away frustrated: "all i wanted was an ASV scanner" — the demo kept
+showing fictional/unreachable targets and canned findings instead of a scan that
+means something to them. Do NOT re-open this thread with walls of text or
+unrequested actions. Ask ONE question, do exactly what they answer.
+
+**Build state (verified before pause):** all 8 dashboard phases done + committed
+on `scanner-dashboard`; web `tsc -b` clean, oxlint 0/0, 50/50 vitest, build
+passes; scanner lint clean, 86/86 pytest. Live API verified: operator/QSA
+`/v1/me`, role enforcement (QSA 403 on create/cross-customer reads — commit
+`b3c56d8`), severity_counts + customer_name on scan lists (`7ac2eca`,
+`6af324a`), finding suppress round-trip.
+
+**LIVE PREVIEW (still running on this host, created for the user):**
+- Dashboard: http://localhost:5173 (vite, `VITE_API_PROXY_TARGET=http://127.0.0.1:8005`)
+- Scanner API: http://localhost:8005 (uvicorn from `scanner/`), docs /docs
+- Demo DB: docker `asv-scanner-it` postgres on 127.0.0.1:54329 (db `asv_scanner_it`,
+  user `asv_it`, password CHANGE_ME — local-only fixture compose)
+- Login tokens: `dev-token` = operator · `qsa-demo` = QSA (customer id
+  `9317ccda-4acd-491b-be84-423f90cdd814`, Harbor Credit Union) — but DB was
+  wiped/re-seeded during the session, so QSA-scoped rows for Harbor may be gone.
+- Demo banner server (nginx/1.18.0 on 127.0.0.1:1024) may still be running.
+
+**DB state at pause:** wiped and re-seeded minimal — one customer **Acme Retail**
+(scope `["0.0.0.0/0"]`, id `e33dbc2e-79ec-400c-b50d-563fb43e9e1b`), 2 completed
+scans (FAIL w/ 6 clean findings incl. 1 suppressed; PASS 5 days ago). During the
+session ALL customer scopes were widened to `0.0.0.0/0` in the demo DB — that is
+a DEMO data change, NOT committed product code; the product default remains
+approved-scope enforcement (server-side `_visible_scan`/`require_operator`).
+
+**Real-scan proof from this session:** a genuine scan of scanme.nmap.org
+(45.33.32.156 — the host nmap.org provides for testing) ran end-to-end:
+completed PASS, open ports 22/80/9929/31337, 0 findings. That is the "ASV
+scanner works" evidence to lead with, not seeded rows.
+
+**User-flagged friction (rethink input):** wanted one simple working scan; hated
+walls of text, unrequested actions, demo/fictional targets, and scope-refusal
+errors. Sentiments: "remove the restrictions", "just set the scope to 0.0.0.0",
+"delete all and start again", "i dont need 100 lines". Recommended restart:
+present the REAL scan (scanme) top-of-list, keep demo minimal, ask before acting.
+
+**Open item the user may want rethought:** whether scope enforcement should be
+bypassable in dev/demo (product-correct answer: no; demo-data answer: seed scope
+to the real test target). Not a product change yet.
+
 - **CVE source decision (user 2026-09-02):** user installs Greenbone themselves — Greenbone Community Edition ships CERT + SCAP + GVMD_DATA feeds, so it can be the real CVE source via a `GreenboneSource` adapter (CVESource checkpoint). NVD self-hosted mirror spec (`docs/superpowers/specs/2026-09-02-phase5b-nvd-mirror-design.md`, committed `98b2883`, NOT pushed) is the optional offline/backup path — build it only if Greenbone is not the route.
 
 ## Environment notes
