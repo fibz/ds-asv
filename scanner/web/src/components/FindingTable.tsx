@@ -74,8 +74,8 @@ export function FindingTable({
                   selectedId === f.id ? "bg-raised/60" : ""
                 }`}
               >
-                <PciBar fail={f.pci_fail} />
-                <td className="px-3 py-2 align-top">
+                <td className="relative px-3 py-2 align-top">
+                  <PciBar fail={f.pci_fail} />
                   <SeverityGlyph severity={f.severity} label />
                 </td>
                 <td className="px-3 py-2 align-top text-primary">

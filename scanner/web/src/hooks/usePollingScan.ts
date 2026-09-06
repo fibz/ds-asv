@@ -8,6 +8,17 @@ const TERMINAL: ReadonlySet<ScanStatus> = new Set([
   "partial",
 ]);
 
+export function isTerminal(status: ScanStatus | undefined): boolean {
+  return status ? TERMINAL.has(status) : false;
+}
+
+/** Polling interval in ms, or `false` to stop once the scan is terminal. */
+export function pollIntervalFor(
+  status: ScanStatus | undefined
+): number | false {
+  return isTerminal(status) ? false : 2500;
+}
+
 /**
  * Poll `GET /v1/scans/:id` every 2.5s while the scan is not terminal; stops
  * as soon as a terminal status arrives (plan §4, spec §7). TanStack Query
@@ -18,13 +29,6 @@ export function usePollingScan(scanId: string | undefined) {
     queryKey: ["scan", scanId],
     queryFn: () => getScan(scanId!),
     enabled: Boolean(scanId),
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status && TERMINAL.has(status) ? false : 2500;
-    },
+    refetchInterval: (query) => pollIntervalFor(query.state.data?.status),
   });
-}
-
-export function isTerminal(status: ScanStatus | undefined): boolean {
-  return status ? TERMINAL.has(status) : false;
 }
