@@ -72,7 +72,7 @@ function compressIpv6(groups: string[]): string {
 
 export function normalizeIpv6(raw: string): string {
   const trimmed = raw.trim();
-  if (!IPV6_RE.test(trimmed) || isIP(trimmed, 6) !== 6) {
+  if (!IPV6_RE.test(trimmed) || isIP(trimmed) !== 6) {
     throw new Error(`Invalid IPv6 address: ${raw}`);
   }
   return compressIpv6(expandIpv6(trimmed));
@@ -100,8 +100,8 @@ export function normalizeCidr(raw: string): string {
   const prefixStr = trimmed.slice(slash + 1);
   if (!/^\d{1,3}$/.test(prefixStr)) throw new Error(`Invalid CIDR prefix: ${raw}`);
   const prefix = Number(prefixStr);
-  const isV4 = isIP(ip, 4) === 4;
-  const isV6 = isIP(ip, 6) === 6;
+  const isV4 = isIP(ip) === 4;
+  const isV6 = isIP(ip) === 6;
   if (!isV4 && !isV6) throw new Error(`Invalid CIDR address: ${raw}`);
   const maxPrefix = isV4 ? 32 : 128;
   if (prefix > maxPrefix) throw new Error(`CIDR prefix out of range: ${raw}`);

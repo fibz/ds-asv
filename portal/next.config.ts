@@ -3,7 +3,6 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  output: "standalone",
   distDir: "/var/compliance-build/.next",
   experimental: {
     serverActions: {

@@ -43,9 +43,8 @@ function setup(role: string, membershipRow?: Record<string, unknown> | null) {
   vi.mocked(prisma.organizationMembership.count).mockResolvedValue(2 as never);
   // R12 (plan-bug ruling, test-only): the service reads the update result, so
   // the membership update mock must resolve a row with the requested role.
-  vi.mocked(prisma.organizationMembership.update).mockImplementation((args) =>
-    Promise.resolve({ ...mRow, ...(args as { data?: { role?: string } }).data } as never)
-  );
+  vi.mocked(prisma.organizationMembership.update).mockImplementation(((args: { data?: { role?: string } }) =>
+    Promise.resolve({ ...mRow, ...(args.data ?? {}) })) as never);
 }
 
 // R11 (plan-bug ruling, test-only): the [memberId] handlers take the Next 16

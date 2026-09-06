@@ -34,7 +34,7 @@ function setup(role: string, orgRow?: Record<string, unknown>) {
   vi.mocked(prisma.user.create).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email, orgId: "org_1", role: "admin" } as never);
   vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email, orgId: "org_1", role: "admin" } as never);
   vi.mocked(prisma.organizationMembership.findFirst).mockResolvedValueOnce({ userId: "u1", organizationId: "org_1", role, status: "active" } as never);
-  vi.mocked(prisma.organization.findUnique).mockResolvedValue(orgRow ?? { id: "org_1", name: "Acme", parentOrgId: null, createdAt: new Date(), updatedAt: new Date() } as never);
+  vi.mocked(prisma.organization.findUnique).mockResolvedValue((orgRow ?? { id: "org_1", name: "Acme", parentOrgId: null, createdAt: new Date(), updatedAt: new Date() }) as never);
   vi.mocked(prisma.contact.findMany).mockResolvedValue([] as never);
 }
 
