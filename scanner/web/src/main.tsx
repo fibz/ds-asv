@@ -4,18 +4,31 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import "./tokens.css";
 import { AppLayout } from "./App";
-import { WatchPage } from "./pages/Watch";
-import { ScansPage } from "./pages/Scans";
+import { HomeGate, RequireAuth, RequireRole } from "./auth/guard";
 import { CustomersPage } from "./pages/Customers";
+import { LoginPage } from "./pages/Login";
 import { NotFoundPage } from "./pages/NotFound";
+import { ScansPage } from "./pages/Scans";
 
 const router = createBrowserRouter([
+  { path: "/login", element: <LoginPage /> },
   {
-    element: <AppLayout />,
+    element: (
+      <RequireAuth>
+        <AppLayout />
+      </RequireAuth>
+    ),
     children: [
-      { index: true, element: <WatchPage /> },
+      { index: true, element: <HomeGate /> },
       { path: "scans", element: <ScansPage /> },
-      { path: "customers", element: <CustomersPage /> },
+      {
+        path: "customers",
+        element: (
+          <RequireRole role="operator">
+            <CustomersPage />
+          </RequireRole>
+        ),
+      },
       { path: "*", element: <NotFoundPage /> },
     ],
   },
