@@ -4,12 +4,15 @@ import { jwtVerify } from "jose";
 import { prisma } from "@/lib/prisma-client";
 import { GET as loginGET } from "./login/route";
 import { GET as callbackGET } from "./callback/route";
+import { GET as devLoginGET } from "./dev-login/route";
 
 vi.mock("jose", () => ({ jwtVerify: vi.fn(), createRemoteJWKSet: vi.fn(() => ({ mock: "jwks" })) }));
 
 vi.mock("@/lib/prisma-client", () => {
   const txMock = {
     user: { create: vi.fn(), findUnique: vi.fn() },
+    organization: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({}) },
+    organizationMembership: { upsert: vi.fn().mockResolvedValue({}) },
     session: { findUnique: vi.fn().mockResolvedValue(null), findFirst: vi.fn().mockResolvedValue(null), upsert: vi.fn(), findMany: vi.fn().mockResolvedValue([]), update: vi.fn() },
     auditEvent: { create: vi.fn() },
     $executeRawUnsafe: vi.fn(),
@@ -51,6 +54,27 @@ describe("auth login route", () => {
     vi.stubEnv("KEYCLOAK_ISSUER", "");
     const res = await loginGET(req("/api/auth/login"));
     expect(res.status).toBe(503);
+  });
+
+  it("provides a dev-only one-click customer login", async () => {
+    vi.mocked(jwtVerify).mockResolvedValueOnce({ payload: CLAIMS, protectedHeader: {} } as never);
+    vi.mocked(prisma.user.create).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email } as never);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ access_token: "at-dev" }), { status: 200 })));
+
+    const res = await devLoginGET(req("/api/auth/dev-login?role=customer"));
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/customer");
+    expect(res.headers.get("set-cookie")).toContain("asv_session=at-dev");
+    const body = vi.mocked(fetch).mock.calls[0][1]?.body?.toString() ?? "";
+    expect(body).toContain("grant_type=password");
+    expect(body).toContain("username=regular-user");
+  });
+
+  it("disables the dev shortcut in prod", async () => {
+    vi.stubEnv("APP_MODE", "prod");
+    const res = await devLoginGET(req("/api/auth/dev-login?role=customer"));
+    expect(res.status).toBe(404);
   });
 });
 
