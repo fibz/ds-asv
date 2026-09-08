@@ -3,7 +3,6 @@ import { setRlsContext, getAppMode } from "@/lib/tenant";
 import { recordAudit } from "@/lib/audit";
 import { listFindings } from "@/lib/scan/findings";
 import { resolveReportScopeVersionId } from "@/lib/scan/service";
-import { getScopeVersion } from "@/lib/scope/service";
 import type { TenantContext } from "@/lib/tenant";
 import type { Prisma, Report, ReportAttestation } from "@/lib/generated/prisma";
 
@@ -97,31 +96,43 @@ export async function attestReport(
   reportId: string,
   opts?: { reason?: string }
 ): Promise<Report | null> {
-  return withTenant(ctx.organizationId, async (tx) => {
-    const report = await tx.report.findUnique({ where: { id: reportId }, include: { attestation: true } });
-    if (!report) return null;
-    if (report.status !== "submitted") throw new ReportGuardError("only submitted reports can be attested");
-    if (getAppMode() === "prod" && !ctx.isStaff) throw new ReportGuardError("attestation requires a staff reviewer in prod");
-    // Phase 5: in prod the attestation gate ALSO requires the report's linked
-    // scope version to exist and be approved — a dev-built report with no
-    // approved scope authority must never be finalized. (Dev/test: gate
-    // relaxed, per Global Constraints.)
-    if (getAppMode() === "prod") {
-      const scopeV = report.scopeVersionId
-        ? (await getScopeVersion(ctx, report.scopeVersionId))
-        : null;
-      if (!scopeV || scopeV.status !== "approved") {
-        throw new ReportGuardError("cannot attest: report has no approved scope version (required in prod)");
-      }
+  return withTenant(ctx.organizationId, (tx) => attestReportOnTransaction(ctx, tx, reportId, opts));
+}
+
+/**
+ * Caller-owned transaction variant used by assignment-scoped QSA review.
+ * The caller must bind tenant/RLS context before invoking this function.
+ */
+export async function attestReportOnTransaction(
+  ctx: TenantContext,
+  tx: Prisma.TransactionClient,
+  reportId: string,
+  opts?: { reason?: string },
+): Promise<Report | null> {
+  const report = await tx.report.findUnique({ where: { id: reportId }, include: { attestation: true } });
+  if (!report) return null;
+  if (report.status !== "submitted") throw new ReportGuardError("only submitted reports can be attested");
+  if (getAppMode() === "prod" && !ctx.isStaff) throw new ReportGuardError("attestation requires a staff reviewer in prod");
+  if (!report.attestation) throw new ReportGuardError("submitted report has no attestation record");
+  // Phase 5: in prod the attestation gate ALSO requires the report's linked
+  // scope version to exist and be approved — a dev-built report with no
+  // approved scope authority must never be finalized. (Dev/test: gate
+  // relaxed, per Global Constraints.)
+  if (getAppMode() === "prod") {
+    const scopeV = report.scopeVersionId
+      ? await tx.scopeVersion.findUnique({ where: { id: report.scopeVersionId } })
+      : null;
+    if (!scopeV || scopeV.status !== "approved") {
+      throw new ReportGuardError("cannot attest: report has no approved scope version (required in prod)");
     }
-    await tx.reportAttestation.update({
-      where: { id: report.attestation!.id },
-      data: { status: "attested", reason: opts?.reason ?? null, reviewedAt: new Date() },
-    });
-    const updated = await tx.report.update({ where: { id: reportId }, data: { status: "attested" } });
-    await recordAudit(ctx, "report.attested", "Report", reportId, { status: report.status }, { status: "attested" }, opts?.reason, tx);
-    return updated;
+  }
+  await tx.reportAttestation.update({
+    where: { id: report.attestation.id },
+    data: { status: "attested", reason: opts?.reason ?? null, reviewedAt: new Date() },
   });
+  const updated = await tx.report.update({ where: { id: reportId }, data: { status: "attested" } });
+  await recordAudit(ctx, "report.attested", "Report", reportId, { status: report.status }, { status: "attested" }, opts?.reason, tx);
+  return updated;
 }
 
 export function isReportFinal(report: {
