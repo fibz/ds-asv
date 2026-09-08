@@ -105,6 +105,14 @@ describeDb("QSA assignment schema and RLS", () => {
     expect(visible.map((row) => row.id)).toEqual([REPORT_A]);
   });
 
+  it("exposes only customer-safe assignment status for the current tenant", async () => {
+    const rows = await withContext(CUSTOMER_A, (tx) => tx.$queryRaw<Array<{ reportId: string; status: string }>>`
+      SELECT "reportId", "status"
+      FROM public.customer_report_assignment_statuses(ARRAY[${REPORT_A}, ${REPORT_B}]::text[])
+    `);
+    expect(rows).toEqual([{ reportId: REPORT_A, status: "queued" }]);
+  });
+
   afterAll(async () => {
     await adminWipe();
     await prisma.$disconnect();
