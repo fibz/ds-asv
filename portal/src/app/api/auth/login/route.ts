@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   authorizeUrl,
   newOAuthState,
+  publicOrigin,
   STATE_COOKIE,
   sessionCookieOptions,
 } from "@/lib/auth/session-cookie";
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
       { status: 503 }
     );
   }
-  const origin = request.nextUrl.origin;
+  const origin = publicOrigin(request.nextUrl.origin);
   const redirectUri = `${origin}/api/auth/callback`;
   const state = newOAuthState();
   const url = authorizeUrl(state, { redirectUri });

@@ -3,6 +3,7 @@ import {
   clearStateCookieHeader,
   exchangeCode,
   parseCookies,
+  publicOrigin,
   sessionCookieHeader,
   STATE_COOKIE,
 } from "@/lib/auth/session-cookie";
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "OAuth state mismatch" }, { status: 400 });
   }
 
-  const origin = request.nextUrl.origin;
+  const origin = publicOrigin(request.nextUrl.origin);
   const redirectUri = `${origin}/api/auth/callback`;
   let token: string;
   try {

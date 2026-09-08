@@ -38,6 +38,14 @@ export interface RequestLike {
   headers: { get(name: string): string | null };
 }
 
+/**
+ * Public browser origin for OAuth redirects. Behind a reverse proxy Next can
+ * otherwise derive an internal origin such as http://0.0.0.0:3000.
+ */
+export function publicOrigin(requestOrigin: string): string {
+  return (process.env.PUBLIC_ORIGIN ?? requestOrigin).replace(/\/+$/, "");
+}
+
 /** The session token for a request: Authorization Bearer, else the session cookie. */
 export function sessionTokenFromRequest(request: RequestLike): string | null {
   const auth = request.headers.get("authorization") ?? "";
