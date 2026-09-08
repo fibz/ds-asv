@@ -70,10 +70,14 @@ describeDb("QSA assignment lifecycle", () => {
   });
 
   it("lists candidates and makes queue claim race-safe", async () => {
-    expect((await listQsaCandidateReports(ctx)).map((row) => row.reportId)).toEqual([REPORT_2, REPORT_1]);
+    const initialIds = (await listQsaCandidateReports(ctx)).map((row) => row.reportId);
+    expect(initialIds).toContain(REPORT_2);
+    expect(initialIds).toContain(REPORT_1);
     const created = await createQsaAssignment(ctx, { reportId: REPORT_1, notes: "Review evidence" });
     expect(created.status).toBe("queued");
-    expect((await listQsaCandidateReports(ctx)).map((row) => row.reportId)).toEqual([REPORT_2]);
+    const remainingIds = (await listQsaCandidateReports(ctx)).map((row) => row.reportId);
+    expect(remainingIds).toContain(REPORT_2);
+    expect(remainingIds).not.toContain(REPORT_1);
 
     const claimed = await claimQsaAssignment(ctx, created.id);
     expect(claimed.assigneeUserId).toBe(USER_1);

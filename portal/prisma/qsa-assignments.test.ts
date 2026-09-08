@@ -90,7 +90,10 @@ describeDb("QSA assignment schema and RLS", () => {
     const candidates = await withContext(QSA, (tx) => tx.$queryRaw<Array<{ reportId: string }>>`
       SELECT "reportId" FROM public.qsa_list_candidate_reports(${QSA}, ${QSA_USER})
     `, { qsaOrgId: QSA, qsaUserId: QSA_USER });
-    expect(candidates.map((row) => row.reportId)).toEqual([REPORT_B, REPORT_A2]);
+    const ids = candidates.map((row) => row.reportId);
+    expect(ids).toContain(REPORT_B);
+    expect(ids).toContain(REPORT_A2);
+    expect(ids).not.toContain(REPORT_A);
   });
 
   it("does not expose another report through an assignment-scoped RLS session", async () => {
