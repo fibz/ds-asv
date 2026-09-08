@@ -31,7 +31,7 @@ export default function SignInPage() {
           it as <code className="font-mono">Authorization: Bearer &lt;token&gt;</code>.
         </p>
         <p className="mt-2 text-sm text-gray-500">
-          <Link href="/dashboard" className="text-indigo-600 hover:underline">
+          <Link href="/customer" className="text-indigo-600 hover:underline">
             Continue to the dashboard
           </Link>
         </p>

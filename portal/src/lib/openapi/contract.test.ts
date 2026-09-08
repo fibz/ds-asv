@@ -55,12 +55,15 @@ describe("phase 3 scan contract", () => {
     expect(paths["/scans"].get).toBeDefined();
     expect(paths["/scans/{scanId}"].get).toBeDefined();
     expect(paths["/scans/{scanId}"].patch).toBeDefined();
+    expect(paths["/scans/{scanId}/dispatch"].post).toBeDefined();
+    expect(paths["/scanner/health"].get).toBeDefined();
   });
 
   it("documents findings ingestion and reports", () => {
     expect(paths["/scans/{scanId}/findings"].post).toBeDefined();
     expect(paths["/scans/{scanId}/findings"].get).toBeDefined();
     expect(paths["/reports/{reportId}"].get).toBeDefined();
+    expect(paths["/reports/{reportId}/download"].get).toBeDefined();
     expect(paths["/reports/{reportId}/attest"].post).toBeDefined();
   });
 

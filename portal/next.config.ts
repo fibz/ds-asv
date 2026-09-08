@@ -3,7 +3,9 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  distDir: "/var/compliance-build/.next",
+  // Keep development artifacts inside the checkout. The production build
+  // still writes to its configured absolute artifact directory.
+  distDir: process.env.NODE_ENV === "development" ? ".next" : "/var/compliance-build/.next",
   experimental: {
     serverActions: {
       bodySizeLimit: "2mb",
