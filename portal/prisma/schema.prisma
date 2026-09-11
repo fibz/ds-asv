@@ -32,6 +32,8 @@ model Organization {
   targets           ScanTarget[]
   findings          Finding[]
   reports           Report[]
+  qsaAssignments     QsaAssignment[]       @relation("QsaQueueAssignments")
+  customerAssignments QsaAssignment[]     @relation("QsaCustomerAssignments")
   reportAttestations ReportAttestation[]
   scopeSets           ScopeSet[]
   scopeVersions       ScopeVersion[]
@@ -130,9 +132,36 @@ model Report {
   scan           Scan              @relation(fields: [scanId], references: [id], onDelete: Cascade)
   organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   attestation    ReportAttestation? @relation("ReportAttestation")
+  qsaAssignments QsaAssignment[]
 
   @@unique([scanId])
   @@index([organizationId])
+}
+
+model QsaAssignment {
+  id                     String       @id @default(cuid())
+  qsaOrganizationId      String
+  customerOrganizationId String
+  reportId               String
+  assigneeUserId         String?
+  status                 String       @default("queued") // queued, assigned, in_review, completed, cancelled
+  createdByUserId        String
+  dueAt                  DateTime?
+  notes                  String?
+  claimedAt              DateTime?
+  completedAt            DateTime?
+  cancelledAt            DateTime?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+  qsaOrganization        Organization @relation("QsaQueueAssignments", fields: [qsaOrganizationId], references: [id], onDelete: Cascade)
+  customerOrganization   Organization @relation("QsaCustomerAssignments", fields: [customerOrganizationId], references: [id], onDelete: Cascade)
+  report                 Report       @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  assigneeUser           User?        @relation("QsaAssignedUser", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  createdByUser          User         @relation("QsaCreatedUser", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([qsaOrganizationId, status])
+  @@index([assigneeUserId, status])
+  @@index([reportId])
 }
 
 model ReportAttestation {
@@ -284,6 +313,8 @@ model User {
   updatedAt     DateTime                 @updatedAt
   memberships   OrganizationMembership[]
   sessions      Session[]
+  qsaAssignmentsAssigned QsaAssignment[] @relation("QsaAssignedUser")
+  qsaAssignmentsCreated QsaAssignment[]  @relation("QsaCreatedUser")
 }
 
 model OrganizationMembership {

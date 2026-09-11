@@ -4,6 +4,7 @@ import { ScanGuardError } from "@/lib/scan/service";
 import { ReportGuardError } from "@/lib/scan/report";
 import { ScopeGuardError } from "@/lib/scope/service";
 import { DisputeGuardError } from "@/lib/disputes/service";
+import { QsaAssignmentConflictError, QsaAssignmentGuardError, QsaAssignmentNotFoundError } from "@/lib/qsa/assignment";
 
 /**
  * Maps an unexpected route/service error to a response following the
@@ -29,6 +30,12 @@ export function routeErrorResponse(
   }
   if (err instanceof DisputeGuardError) {
     return NextResponse.json({ error: err.message }, { status: 409 });
+  }
+  if (err instanceof QsaAssignmentGuardError || err instanceof QsaAssignmentConflictError) {
+    return NextResponse.json({ error: err.message }, { status: 409 });
+  }
+  if (err instanceof QsaAssignmentNotFoundError) {
+    return NextResponse.json({ error: "QSA assignment or report not found" }, { status: 404 });
   }
   if (opts.notFound && err instanceof Error && err.message === opts.notFound) {
     return NextResponse.json({ error: opts.notFound }, { status: 404 });

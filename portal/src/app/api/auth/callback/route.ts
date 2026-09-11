@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   clearStateCookieHeader,
+  clearReturnToCookieHeader,
   exchangeCode,
   parseCookies,
+  publicOrigin,
+  RETURN_TO_COOKIE,
   sessionCookieHeader,
   STATE_COOKIE,
 } from "@/lib/auth/session-cookie";
@@ -26,7 +29,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "OAuth state mismatch" }, { status: 400 });
   }
 
-  const origin = request.nextUrl.origin;
+  const origin = publicOrigin(request.nextUrl.origin);
   const redirectUri = `${origin}/api/auth/callback`;
   let token: string;
   try {
@@ -52,8 +55,10 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const res = NextResponse.redirect(`${origin}/dashboard`);
+  const destination = cookies[RETURN_TO_COOKIE] === "/qsa" ? "/qsa" : "/dashboard";
+  const res = NextResponse.redirect(`${origin}${destination}`);
   res.headers.append("set-cookie", sessionCookieHeader(token));
   res.headers.append("set-cookie", clearStateCookieHeader());
+  res.headers.append("set-cookie", clearReturnToCookieHeader());
   return res;
 }
