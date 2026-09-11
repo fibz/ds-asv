@@ -3,6 +3,7 @@ import {
   authorizeUrl,
   newOAuthState,
   publicOrigin,
+  RETURN_TO_COOKIE,
   STATE_COOKIE,
   sessionCookieOptions,
 } from "@/lib/auth/session-cookie";
@@ -24,5 +25,12 @@ export async function GET(request: NextRequest) {
   const res = NextResponse.redirect(url);
   const opts = sessionCookieOptions({ maxAge: 10 * 60 }); // state only valid ~10 min
   res.cookies.set(STATE_COOKIE, state, opts);
+  // Only allow the explicit internal QSA destination; never reflect an
+  // arbitrary query value into the post-login redirect.
+  const returnTo = request.nextUrl.searchParams.get("returnTo");
+  res.cookies.set(RETURN_TO_COOKIE, returnTo === "/qsa" ? "/qsa" : "", {
+    ...opts,
+    maxAge: returnTo === "/qsa" ? opts.maxAge : 0,
+  });
   return res;
 }

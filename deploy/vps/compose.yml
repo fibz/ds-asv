@@ -100,6 +100,7 @@ services:
       ADMIN_DATABASE_URL: postgresql://asv:${DB_ADMIN_PASSWORD:?set DB_ADMIN_PASSWORD}@db:5432/asv_portal
       MANIFEST_SECRET: ${MANIFEST_SECRET:?set MANIFEST_SECRET}
       KEYCLOAK_ISSUER: https://${PUBLIC_HOST:?set PUBLIC_HOST}/auth/realms/asv-portal
+      KEYCLOAK_INTERNAL_ISSUER: http://keycloak:8080/auth/realms/asv-portal
       KEYCLOAK_CLIENT_ID: asv-portal
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?set KEYCLOAK_CLIENT_SECRET}
       PUBLIC_ORIGIN: https://${PUBLIC_HOST:?set PUBLIC_HOST}

@@ -7,11 +7,18 @@ import { createHash, randomBytes } from "node:crypto";
 // header) reuses the existing verifyToken → provision → Session-registry path.
 export const SESSION_COOKIE = "asv_session";
 export const STATE_COOKIE = "asv_oauth_state";
+export const RETURN_TO_COOKIE = "asv_oauth_return_to";
 
 function issuer(): string {
   const raw = process.env.KEYCLOAK_ISSUER;
   if (!raw) throw new Error("KEYCLOAK_ISSUER is not set; OIDC login is unavailable");
   return raw.replace(/\/+$/, "");
+}
+
+/** Internal Keycloak endpoint used by the server-side code exchange. */
+function internalIssuer(): string {
+  const internal = process.env.KEYCLOAK_INTERNAL_ISSUER;
+  return (internal || issuer()).replace(/\/+$/, "");
 }
 
 function clientId(): string {
@@ -99,7 +106,7 @@ export interface TokenResponse {
 export async function exchangeCode(code: string, redirectUri: string): Promise<TokenResponse> {
   const secret = process.env.KEYCLOAK_CLIENT_SECRET;
   if (!secret) throw new Error("KEYCLOAK_CLIENT_SECRET is not set; OIDC login is unavailable");
-  const res = await fetch(`${issuer()}/protocol/openid-connect/token`, {
+  const res = await fetch(`${internalIssuer()}/protocol/openid-connect/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -164,4 +171,9 @@ export function clearSessionCookieHeader(opts: CookieOptions = {}): string {
 /** set-cookie header that clears the OAuth state cookie (post-callback). */
 export function clearStateCookieHeader(opts: CookieOptions = {}): string {
   return cookieHeader(STATE_COOKIE, "", { ...sessionCookieOptions(opts), maxAge: 0 });
+}
+
+/** set-cookie header that clears the optional post-login destination. */
+export function clearReturnToCookieHeader(opts: CookieOptions = {}): string {
+  return cookieHeader(RETURN_TO_COOKIE, "", { ...sessionCookieOptions(opts), maxAge: 0 });
 }

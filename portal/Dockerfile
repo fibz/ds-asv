@@ -48,7 +48,10 @@ WORKDIR /app
 ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000
 
 COPY --from=builder /var/compliance-build/.next/standalone ./
-COPY --from=builder /var/compliance-build/.next/static ./.next/static
+# next.config.ts uses a repository-relative production distDir. Keep the
+# static assets beside the standalone server's resolved distDir; copying them
+# to /app/.next/static leaves every /_next asset as a 404 at runtime.
+COPY --from=builder /var/compliance-build/.next/static ./var/compliance-build/.next/static
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma

@@ -15,12 +15,20 @@ export default function SignInPage() {
           Authentication is provided by your self-hosted Keycloak realm.
         </p>
         {issuer ? (
-          <a
-            href="/api/auth/login"
-            className="inline-block px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700"
-          >
-            Sign in with Keycloak
-          </a>
+          <>
+            <a
+              href="/api/auth/login"
+              className="inline-block px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700"
+            >
+              Sign in
+            </a>
+            <p className="mt-4 text-xs text-gray-500">
+              QSA reviewer?{" "}
+              <a href="/api/auth/login?returnTo=%2Fqsa" className="font-medium text-indigo-600 hover:underline">
+                Use reviewer access
+              </a>
+            </p>
+          </>
         ) : (
           <p className="text-sm text-amber-600">
             KEYCLOAK_ISSUER is not set — token verification is unavailable.
