@@ -1509,6 +1509,7 @@ git commit -m "feat(customer-ui): view models for stages, quarter tasks and the 
   - `<StageProgress steps: { label: string; state: StageState }[] />`
   - `<Skeleton lines={number} />`, `<ErrorState message onRetry />`, `<PartialState message onRetry />`, `<PermissionState permission />`
   - `export const routes: { path: string; element: ReactNode }[]` in `routes.tsx` — single list consumed by both the router and the nav (the nav must never invent a path)
+  - `useStageRows(): { rows: StageRow[]; quarter: QuarterInfo; loading: boolean; error: unknown }` in `src/lib/hooks/useStageRows.ts` — the single derivation of the sidebar's stage rows (and the quarter), built from `useAssets`/`useScans`/`useReports`/`useScopeSets` + `reportGate` + `stageRows`. AppShell consumes it; Home may too. Two independent derivations of "which stage is complete" would drift, so there must be exactly one.
 
 - [ ] **Step 1: Write the failing test**
 
