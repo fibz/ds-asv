@@ -469,3 +469,53 @@ ssh purple 'cd /home/cchock/projects/ds-asv-portal/portal && find src -type f \(
 ```
 
 As of this incident that comparison showed parity except for files whose repo version was simply newer. It should be re-run before trusting a deploy, and the honest fix is to version `deploy/vps/` and the deployed source so the question stops being open.
+
+---
+
+## 12. Final state — end of 2026-09-12
+
+### Deployed and verified
+
+| Item | State |
+|---|---|
+| Portal image | rebuilt from the **reconciled** source (repo commit `d2a3fbad`) — `publicOrigin`, `internalIssuer`, `keycloakInternalIssuer` now in the repo, with validated `returnTo` on top |
+| `redirect_uri` | `https://74.156.0.13:8443/api/auth/callback` ✅ |
+| Sign-in from `/app` | **lands in `/app`** ✅ (was `<origin>/dashboard` → `/sign-in` → `/customer`) |
+| Off-site `returnTo` | refused ✅ |
+| SPA bundle | `customer-ui` at `deploy/vps/app-dist`, assets under `/app/static/` |
+| Portal tests | 431 (428 passed, 3 live-Keycloak skipped), tsc clean |
+| SPA tests | 189, tsc clean, lint clean |
+
+### Bug found and fixed during the final walk: `/app/assets` returned 403
+
+The SPA has a route at `/assets`, and the Vite build also emitted a directory `/app/assets/`. With `try_files $uri $uri/ /app/index.html`, a request for the *route* matched the *directory*, found no index and returned **403 Forbidden** — while client-side navigation to the same screen worked fine, which is exactly why it survived the earlier checks.
+
+Two changes, belt and braces:
+
+1. `customer-ui/vite.config.ts` — `build.assetsDir: "static"`, so no bundle directory can collide with a route name (assets now served from `/app/static/`).
+2. `nginx.conf` — `try_files $uri /app/index.html;` (directory branch dropped; for an SPA only real files should match).
+
+Verified after the fix: `/app/assets` → `200 text/html`, `/app/static/index-*.js` → `200 application/javascript`.
+
+### Full authenticated screen walk (real browser, live session)
+
+Every screen loaded with **zero console errors, zero page errors, zero failed requests**:
+
+| Route | Result |
+|---|---|
+| `/app/` | checklist home, "0 of 5 done", real org name, 18 days left |
+| `/app/assets` | "Everything that may be scanned…" + Add asset / Import CSV, empty state |
+| `/app/scope` | "What is approved for scanning, and the version history behind it." |
+| `/app/scans` | "Every scan this organisation has run, newest first." |
+| `/app/reports` | "Each report records the scope version it was run against." |
+| `/app/team`, `/app/access`, `/app/audit`, `/app/settings` | **by design** — "This screen is not built yet — it is scheduled for the second pass of the customer UI." |
+
+The four placeholder screens are the intended second-pass scope, not defects. The org has no assets/scans/reports, so the empty states above are correct behaviour rather than an untested path.
+
+### Still outstanding
+
+1. **The load balancer** — not provisioned. When it exists: set `PUBLIC_HOST`, re-run `render-realm.sh`, restart Keycloak, and register the LB hostname as a Keycloak redirect URI.
+2. **The self-signed certificate** — browsers warn before `/app`. The LB should terminate real TLS.
+3. **`deploy/vps/` and the deployed `portal/` are still unversioned** — see §11. This is the root risk behind the outage and it is *not* fixed.
+4. **Second-pass screens** (team, access, audit, settings) and the **dispute/authorisation flows are built** in the SPA, but the four management screens are placeholders.
+5. **`admin@asv.test`'s password is not on the host** — automated end-to-end login depends on it being known.
