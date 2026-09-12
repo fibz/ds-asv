@@ -369,11 +369,15 @@ The `/app` deployment was carried out and verified. This section is the record, 
 |---|---|---|
 | 1 | Full backup taken first | `~/backups/ds-asv-portal-20260912-2356.tar.gz` (613K) — whole `ds-asv-portal/`, excluding `node_modules`, `.next`, `.git`, `dist` |
 | 2 | Two portal source files replaced | `portal/src/app/api/v1/reports/route.ts` (new) and `portal/src/lib/scope/service.ts` (sha256 `234773f2…` verified identical to the repo after copy). Nothing else in `portal/` was touched — **not** a tree sync |
-| 3 | Portal image rebuilt and restarted | `docker compose --env-file ../.env build portal` then `up -d portal`. Container logged "No pending migrations to apply". The previous image id is recorded below for rollback |
+| 3 | Portal image rebuilt and restarted | `cd deploy/vps && sudo docker compose --env-file /home/cchock/projects/ds-asv-portal/.env build portal` then `up -d portal`. Container logged "No pending migrations to apply". The previous image id is recorded below for rollback |
 | 4 | SPA artifact copied to the host | `rsync --delete customer-ui/dist/ …/deploy/vps/app-dist/` |
 | 5 | `nginx.conf` — `/app` block added | `location = /app` 301; `location = /app/index.html` with `no-store`; `location /app/` with `try_files $uri $uri/ /app/index.html`. Backup: `nginx.conf.bak-20260912` |
 | 6 | `compose.yml` — mount added | `./app-dist:/usr/share/nginx/html/app:ro` under the `proxy` service. Backup: `compose.yml.bak-20260912` |
 | 7 | **`nginx.conf` — `mime.types` included** | See the finding below; backup `nginx.conf.bak-mime`. Applied with `nginx -s reload` (no restart, no downtime) |
+
+> **Gotcha — the env file is two levels up.** The stack was started with `--env-file /home/cchock/projects/ds-asv-portal/.env`. From `deploy/vps` that is `../../.env`, **not** `../.env` (which resolves to `deploy/.env` and makes compose abort with `couldn't find env file`). Always use the absolute path.
+>
+> A failed build here is harmless — compose aborts before touching the running container. That is exactly why the build and the `up` are run as separate steps.
 
 ### The finding that mattered most
 
