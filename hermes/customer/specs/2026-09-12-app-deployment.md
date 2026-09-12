@@ -519,8 +519,19 @@ The four placeholder screens are the intended second-pass scope, not defects. Th
 
 ### Still outstanding
 
-1. **The load balancer** — not provisioned. When it exists: set `PUBLIC_HOST`, re-run `render-realm.sh`, restart Keycloak, and register the LB hostname as a Keycloak redirect URI.
+1. **The load balancer — deferred, NOT a blocker.** Not provisioned, and the user confirmed on 2026-09-12 that **the app is not live yet**, so nothing here is on the critical path. When a real hostname exists, see the Keycloak note below for the correct cutover.
 2. **The self-signed certificate** — browsers warn before `/app`. The LB should terminate real TLS.
 3. **`deploy/vps/` and the deployed `portal/` — now baselined (was the root cause of §11).** As of 2026-09-12 the deployed tree at `/home/cchock/projects/ds-asv-portal/` is a **local git repo** (initial commit `55ad2f7`, 394 files) with a `.gitignore` that excludes `.env`, `certs/`, `*.pem`, `*.key`, `realm.json`, `app-dist/`, `node_modules/` and dumps — verified: no secrets staged, no private keys in the diff. Changes to production config are now diffable and revertible. **It has no remote**, so that history exists only on purple; and it is still not the same tree as this repo, so the pre-deploy hash comparison in §11 stays mandatory.
 4. **Second-pass screens** (team, access, audit, settings) and the **dispute/authorisation flows are built** in the SPA, but the four management screens are placeholders.
 5. **`admin@asv.test`'s password is not on the host** — automated end-to-end login depends on it being known.
+
+### Changing the Keycloak realm: two traps
+
+The Keycloak service runs `start --import-realm` with the realm bind-mounted from `deploy/vps/realm.json`, but **the realm lives in the `keycloak-data` volume**, so:
+
+1. **`--import-realm` only imports a realm that does NOT already exist.** The realm is already in the database. Re-running `render-realm.sh` and restarting Keycloak is a **silent no-op** — the stored realm wins. Do not expect a restart to apply a realm.json change.
+2. **NEVER wipe `keycloak-data` or delete the realm to force a re-import.** `realm.template.json` contains only `staff-user` and `regular-user`. The `admin` user — the one that actually owns the organisation and holds data — was created *after* the original import and is **not in the template**. Resetting the realm deletes that account and locks you out of the only populated tenant.
+
+**Correct method for any realm change:** update the running realm through the admin API (or console) — e.g. `PUT /auth/admin/realms/asv-portal` with the amended `redirectUris`/`webOrigins` — and treat `realm.json` as documentation of the initial state, not as the live configuration.
+
+**Load-balancer cutover, when a hostname exists:** add `https://<lb-host>/*` to the realm's `redirectUris` + `webOrigins` (admin API), set `PUBLIC_HOST=<lb-host>` in purple's `.env` (it drives `KC_HOSTNAME`), set the portal's `KEYCLOAK_ISSUER` + `PUBLIC_ORIGIN` to `https://<lb-host>`, then recreate the `keycloak` and `portal` containers and verify the full login round trip.
