@@ -209,6 +209,13 @@ Because the frontend reuses the portal's Keycloak session (§7), this is **not**
 - Sign-out calls the portal's existing logout route (which revokes the session registry row) and returns to the sign-in landing.
 - Vite is configured with `base: '/app/'` and history-fallback routing so deep links work under the base path.
 
+**In front of all of this sits an Azure load balancer.** The public entry point for the finished product is the load balancer's address, which forwards to `purple:8443` — not `8443` directly. Consequences that must be handled at deploy time:
+
+- **Keycloak redirect URIs must list the load balancer's hostname.** The portal's login route derives the callback from the request's own origin (`request.nextUrl.origin`), so the URI Keycloak sees depends on the hostname the browser used. An unlisted hostname is a hard failure at the callback, not a warning.
+- **The original `Host` and `X-Forwarded-Proto` must survive the hop.** nginx already forwards both to the portal; the load balancer must too, or the derived callback will name the wrong scheme or host.
+- **TLS is terminated twice** (load balancer, then nginx on 8443). Whether the load balancer re-encrypts or passes through decides whether the nginx certificate is ever seen by a browser.
+- The app itself needs no change for this: `/app` and `/api` are relative paths, so they follow whatever host the user arrives on.
+
 *Alternative considered and rejected for now:* a separate origin with its own Keycloak public client and Bearer tokens. It is the cleanest separation and gives the frontend its own login screen, but it requires CORS headers on every portal route plus a realm client and audience mapper. Parked, not dismissed — the design keeps the cookie behind a single `auth` module so switching later touches one file.
 
 ## 8. Backend prerequisites (additive only)
@@ -307,3 +314,4 @@ Mockups for each decision are in `specs/2026-09-12-ui-mockups/` (see its README 
 3. **Home "open findings" total** — decide whether it composes from scan findings or needs the optional list endpoint.
 4. **Product naming** — the shell currently says "T3MP3ST"; the customer-facing product name is unconfirmed.
 5. **Base-path cookie scope** — confirm the session cookie path/domain allows `/app` and `/api` on the same origin in the target deployment.
+6. **Load balancer hostname and Keycloak redirect URIs** — the product's public address is an Azure load balancer in front of `purple:8443`. Its hostname must be registered as a valid redirect URI on the Keycloak client before first use, and it must forward the original `Host` and `X-Forwarded-Proto`. Confirm both against the real load balancer when it is in place; neither can be guessed from this repo.

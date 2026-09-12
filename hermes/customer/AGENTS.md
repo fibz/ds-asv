@@ -57,6 +57,16 @@ repo-level `AGENTS.md`. **Read that file** when you need them — don't recall t
 - **Known defect:** `scanner/greenbone.env` points at **blue**; the live Greenbone CVE source
   is **purple**. Re-point before trusting that config.
 - **Deployment is a manual AI-assisted push** heaven → purple. There is no CI.
+- **Where the production stack actually lives** (verified 2026-09-12, read-only on purple):
+  `purple:/home/cchock/projects/ds-asv-portal/` — a plain directory, **not a git repo**. It holds
+  `deploy/vps/compose.yml`, `deploy/vps/nginx.conf`, `deploy/vps/certs/`, `deploy/vps/realm.json`.
+  Nothing there is in this repo, and nothing there has history. **Version it before editing it.**
+- **The edge is nginx**, not Caddy: container `ds-asv-portal-proxy-1` (`nginx:1.27-alpine`),
+  published on `8443`, routing `/auth/` → `keycloak:8080` and everything else → `portal:3000`.
+  A `Caddyfile` sits in the same directory but is unused — editing it does nothing.
+- **An Azure load balancer fronts `purple:8443`** — the public address of the product is the load
+  balancer, not purple. Its hostname must be a valid redirect URI on the Keycloak client (the portal
+  derives the OAuth callback from the request origin), and it must forward `Host` + `X-Forwarded-Proto`.
 
 ## This directory
 

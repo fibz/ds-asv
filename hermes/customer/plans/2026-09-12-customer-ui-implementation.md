@@ -2923,6 +2923,12 @@ Do not ask the human; it is known. purple already runs an nginx edge in the port
 | Compose on host | `/home/cchock/projects/ds-asv-portal/deploy/vps/compose.yml` |
 | Current routing | `/auth/` → `keycloak:8080`; `/` → `portal:3000` (so `/api/*` already hits the portal, same origin) |
 | App tier | `ds-asv-portal-portal-1` (Next.js :3000), keycloak + keycloak-db, db |
+| Public entry point | an **Azure load balancer** in front of purple; `8443` is not the user-facing address |
+
+**The load balancer is not decorative — it breaks login if ignored.** The portal derives the OAuth callback from the request origin, so:
+- the load balancer's hostname must be a valid redirect URI on the Keycloak client (exact match — Keycloak rejects anything else);
+- it must forward the original `Host` and `X-Forwarded-Proto`, or the derived callback names the wrong host/scheme;
+- TLS terminates twice (load balancer, then nginx), so decide whether it re-encrypts or passes through.
 
 The `Caddyfile` in that directory is unused — nginx is what is running. Do not write a Caddy rule expecting it to take effect.
 
