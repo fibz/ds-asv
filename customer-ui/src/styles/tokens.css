@@ -1,0 +1,29 @@
+/* customer-ui/src/styles/tokens.css — the ONLY file allowed to contain colour literals */
+:root {
+  --ink: #18181b;
+  --ink-muted: #71717a;
+  --ink-subtle: #a1a1aa;
+  --border: #e4e4e7;
+  --hairline: #f4f4f5;
+  --surface: #ffffff;
+  --canvas: #fafafa;
+
+  --accent: #6d28d9;
+  --accent-weak: #faf5ff;
+  --accent-border: #ddd6fe;
+
+  --pass: #15803d;
+  --pass-bg: #f0fdf4;
+  --pass-border: #bbf7d0;
+
+  --warn: #a16207;
+  --warn-bg: #fffbeb;
+  --warn-border: #fde68a;
+
+  --fail: #b91c1c;
+  --fail-bg: #fef2f2;
+  --fail-border: #fecaca;
+
+  --radius: 6px;
+  --radius-sm: 4px;
+}
