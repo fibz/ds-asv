@@ -468,7 +468,9 @@ ssh purple 'cd /home/cchock/projects/ds-asv-portal/portal && find src -type f \(
 # compare against the same command run in the repo
 ```
 
-As of this incident that comparison showed parity except for files whose repo version was simply newer. It should be re-run before trusting a deploy, and the honest fix is to version `deploy/vps/` and the deployed source so the question stops being open.
+As of this incident that comparison showed parity except for files whose repo version was simply newer. It should be re-run before trusting a deploy.
+
+**Partly addressed on 2026-09-12:** `/home/cchock/projects/ds-asv-portal/` is now a local git repo (baseline `55ad2f7`) with secrets gitignored, so production changes are diffable and revertible from here on. It has no remote, and it is still a separate tree from this repo — so **re-run the hash comparison before every deploy** rather than trusting that the two have converged.
 
 ---
 
@@ -516,6 +518,6 @@ The four placeholder screens are the intended second-pass scope, not defects. Th
 
 1. **The load balancer** — not provisioned. When it exists: set `PUBLIC_HOST`, re-run `render-realm.sh`, restart Keycloak, and register the LB hostname as a Keycloak redirect URI.
 2. **The self-signed certificate** — browsers warn before `/app`. The LB should terminate real TLS.
-3. **`deploy/vps/` and the deployed `portal/` are still unversioned** — see §11. This is the root risk behind the outage and it is *not* fixed.
+3. **`deploy/vps/` and the deployed `portal/` — now baselined (was the root cause of §11).** As of 2026-09-12 the deployed tree at `/home/cchock/projects/ds-asv-portal/` is a **local git repo** (initial commit `55ad2f7`, 394 files) with a `.gitignore` that excludes `.env`, `certs/`, `*.pem`, `*.key`, `realm.json`, `app-dist/`, `node_modules/` and dumps — verified: no secrets staged, no private keys in the diff. Changes to production config are now diffable and revertible. **It has no remote**, so that history exists only on purple; and it is still not the same tree as this repo, so the pre-deploy hash comparison in §11 stays mandatory.
 4. **Second-pass screens** (team, access, audit, settings) and the **dispute/authorisation flows are built** in the SPA, but the four management screens are placeholders.
 5. **`admin@asv.test`'s password is not on the host** — automated end-to-end login depends on it being known.
