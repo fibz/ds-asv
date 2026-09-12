@@ -568,6 +568,8 @@ Deliberately a **separate compose project**: the scanner has its own database an
 
 ### Verified live (not assumed)
 
+**Authenticated UI confirmed by the user on 2026-09-12** — they signed in through `https://74.156.0.13:8443/scanner/` with the operator token, so the browser path is verified end to end and not just the API.
+
 ```
 /scanner/       -> 200 text/html        /       -> 200   portal intact
 /scanner/scans  -> 200 text/html        /app/   -> 200   customer UI intact
