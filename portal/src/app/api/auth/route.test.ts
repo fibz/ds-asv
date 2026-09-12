@@ -4,12 +4,15 @@ import { jwtVerify } from "jose";
 import { prisma } from "@/lib/prisma-client";
 import { GET as loginGET } from "./login/route";
 import { GET as callbackGET } from "./callback/route";
+import { GET as devLoginGET } from "./dev-login/route";
 
 vi.mock("jose", () => ({ jwtVerify: vi.fn(), createRemoteJWKSet: vi.fn(() => ({ mock: "jwks" })) }));
 
 vi.mock("@/lib/prisma-client", () => {
   const txMock = {
     user: { create: vi.fn(), findUnique: vi.fn() },
+    organization: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({}) },
+    organizationMembership: { upsert: vi.fn().mockResolvedValue({}) },
     session: { findUnique: vi.fn().mockResolvedValue(null), findFirst: vi.fn().mockResolvedValue(null), upsert: vi.fn(), findMany: vi.fn().mockResolvedValue([]), update: vi.fn() },
     auditEvent: { create: vi.fn() },
     $executeRawUnsafe: vi.fn(),
@@ -51,6 +54,56 @@ describe("auth login route", () => {
     vi.stubEnv("KEYCLOAK_ISSUER", "");
     const res = await loginGET(req("/api/auth/login"));
     expect(res.status).toBe(503);
+  });
+
+  it("carries a local returnTo through the OAuth round trip", async () => {
+    const res = await loginGET(req("/api/auth/login?returnTo=/app/"));
+    const raw = res.cookies.get("asv_return_to")?.value ?? "";
+    expect(decodeURIComponent(raw)).toBe("/app/");
+  });
+
+  it("refuses to carry an off-site returnTo (open-redirect guard)", async () => {
+    for (const evil of ["https://evil.example", "//evil.example", "http://localhost.evil.com/x", "javascript:alert(1)", "/ok\r\nSet-Cookie: x=1"]) {
+      const res = await loginGET(req(`/api/auth/login?returnTo=${encodeURIComponent(evil)}`));
+      expect(res.cookies.get("asv_return_to"), `should not accept ${evil}`).toBeUndefined();
+    }
+  });
+
+  it("sets no returnTo cookie when the parameter is absent", async () => {
+    const res = await loginGET(req("/api/auth/login"));
+    expect(res.cookies.get("asv_return_to")).toBeUndefined();
+  });
+
+  it("builds the redirect_uri from PUBLIC_ORIGIN, not the request origin", async () => {
+    // Behind the proxy Next derives e.g. https://0.0.0.0:3000, which the realm
+    // rejects as an unregistered redirect_uri.
+    vi.stubEnv("PUBLIC_ORIGIN", "https://public.example:8443");
+    const res = await loginGET(req("/api/auth/login"));
+    const loc = res.headers.get("location") ?? "";
+    expect(new URL(loc).searchParams.get("redirect_uri")).toBe(
+      "https://public.example:8443/api/auth/callback"
+    );
+  });
+
+  it("provides a dev-only one-click customer login", async () => {
+    vi.mocked(jwtVerify).mockResolvedValueOnce({ payload: CLAIMS, protectedHeader: {} } as never);
+    vi.mocked(prisma.user.create).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email } as never);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ access_token: "at-dev" }), { status: 200 })));
+
+    const res = await devLoginGET(req("/api/auth/dev-login?role=customer"));
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/customer");
+    expect(res.headers.get("set-cookie")).toContain("asv_session=at-dev");
+    const body = vi.mocked(fetch).mock.calls[0][1]?.body?.toString() ?? "";
+    expect(body).toContain("grant_type=password");
+    expect(body).toContain("username=regular-user");
+  });
+
+  it("disables the dev shortcut in prod", async () => {
+    vi.stubEnv("APP_MODE", "prod");
+    const res = await devLoginGET(req("/api/auth/dev-login?role=customer"));
+    expect(res.status).toBe(404);
   });
 });
 
@@ -110,5 +163,59 @@ describe("auth callback route", () => {
     ));
     const res = await callbackGET(req("/api/auth/callback?code=bad&state=st", "asv_oauth_state=st"));
     expect(res.status).toBe(502);
+  });
+
+  // A caller that started at /app must land back in /app, not in the portal's
+  // own UI. The cookie may arrive percent-encoded (Next encodes on serialize)
+  // or raw depending on the cookies library, so both forms are pinned.
+  for (const cookieValue of ["%2Fapp%2F", "/app/"]) {
+    it(`returns to the carried returnTo (cookie form ${cookieValue}) and clears it`, async () => {
+      vi.mocked(jwtVerify).mockResolvedValueOnce({ payload: CLAIMS, protectedHeader: {} } as never);
+      vi.mocked(prisma.user.create).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email } as never);
+      vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email } as never);
+      vi.mocked(prisma.session.findFirst).mockResolvedValue(null as never);
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ access_token: "at-2" }), { status: 200, headers: { "Content-Type": "application/json" } })
+      ));
+
+      const res = await callbackGET(
+        req("/api/auth/callback?code=c&state=st", `asv_oauth_state=st; asv_return_to=${cookieValue}`)
+      );
+      expect(res.status).toBe(307);
+      expect(res.headers.get("location")).toBe("http://localhost/app/");
+      const setCookies = res.headers.get("set-cookie") ?? "";
+      expect(setCookies).toContain("asv_return_to=");
+      expect(setCookies).toContain("Max-Age=0"); // cleared after use
+      expect(setCookies).toContain("asv_session=at-2");
+    });
+  }
+
+  it("ignores an off-site returnTo cookie and falls back to /dashboard", async () => {
+    vi.mocked(jwtVerify).mockResolvedValueOnce({ payload: CLAIMS, protectedHeader: {} } as never);
+    vi.mocked(prisma.user.create).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email } as never);
+    vi.mocked(prisma.session.findFirst).mockResolvedValue(null as never);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ access_token: "at-3" }), { status: 200, headers: { "Content-Type": "application/json" } })
+    ));
+
+    const res = await callbackGET(
+      req("/api/auth/callback?code=c&state=st", "asv_oauth_state=st; asv_return_to=%2F%2Fevil.example")
+    );
+    expect(res.headers.get("location")).toBe("http://localhost/dashboard");
+  });
+
+  it("redirects to PUBLIC_ORIGIN, not the internal request origin", async () => {
+    vi.stubEnv("PUBLIC_ORIGIN", "https://public.example:8443");
+    vi.mocked(jwtVerify).mockResolvedValueOnce({ payload: CLAIMS, protectedHeader: {} } as never);
+    vi.mocked(prisma.user.create).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email } as never);
+    vi.mocked(prisma.session.findFirst).mockResolvedValue(null as never);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ access_token: "at-4" }), { status: 200, headers: { "Content-Type": "application/json" } })
+    ));
+
+    const res = await callbackGET(req("/api/auth/callback?code=c&state=st", "asv_oauth_state=st"));
+    expect(res.headers.get("location")).toBe("https://public.example:8443/dashboard");
   });
 });

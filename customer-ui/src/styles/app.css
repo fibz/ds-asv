@@ -1,0 +1,23 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Tone classes — the only place a state colour is applied. */
+.tone-pass   { color: var(--pass); background-color: var(--pass-bg); border-color: var(--pass-border); }
+.tone-warn   { color: var(--warn); background-color: var(--warn-bg); border-color: var(--warn-border); }
+.tone-fail   { color: var(--fail); background-color: var(--fail-bg); border-color: var(--fail-border); }
+.tone-idle   { color: var(--ink-muted); background-color: var(--canvas); border-color: var(--border); }
+.tone-accent { color: var(--accent); background-color: var(--accent-weak); border-color: var(--accent-border); }
+.tone-dot    { color: inherit; }

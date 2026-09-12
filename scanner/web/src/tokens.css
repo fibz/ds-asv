@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ASV Scanner dashboard tokens (spec §4). Tailwind colors alias these; these
+   base styles set body defaults and the app-wide visible-focus ring. */
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #0b0f1a; /* surface */
+  color: #e6ecf5; /* text primary */
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Visible keyboard focus (spec §4.5) — the one global interactive affordance */
+*:focus-visible {
+  outline: 2px solid #f5a524;
+  outline-offset: 2px;
+}
+
+/* Typography helpers */
+.font-display {
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.font-mono,
+code,
+kbd,
+pre {
+  font-family: "JetBrains Mono", monospace;
+}
+
+/* Dense tables: square cells, tight mono rows (spec §4.3) */
+.dense-table th,
+.dense-table td {
+  border-radius: 0;
+}

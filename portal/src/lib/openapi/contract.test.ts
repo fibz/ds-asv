@@ -55,12 +55,15 @@ describe("phase 3 scan contract", () => {
     expect(paths["/scans"].get).toBeDefined();
     expect(paths["/scans/{scanId}"].get).toBeDefined();
     expect(paths["/scans/{scanId}"].patch).toBeDefined();
+    expect(paths["/scans/{scanId}/dispatch"].post).toBeDefined();
+    expect(paths["/scanner/health"].get).toBeDefined();
   });
 
   it("documents findings ingestion and reports", () => {
     expect(paths["/scans/{scanId}/findings"].post).toBeDefined();
     expect(paths["/scans/{scanId}/findings"].get).toBeDefined();
     expect(paths["/reports/{reportId}"].get).toBeDefined();
+    expect(paths["/reports/{reportId}/download"].get).toBeDefined();
     expect(paths["/reports/{reportId}/attest"].post).toBeDefined();
   });
 
@@ -133,5 +136,30 @@ describe("phase 5 report finalization contract", () => {
     const report = spec.components?.schemas?.Report;
     expect(String(report.description).toLowerCase()).toContain("final");
     expect(String(report.description).toLowerCase()).toContain("approve");
+  });
+});
+
+describe("QSA assignment portal contract", () => {
+  const spec = loadSpec();
+  const paths = spec.paths ?? {};
+  const schemas = spec.components?.schemas ?? {};
+
+  it("documents candidate and assignment lifecycle routes", () => {
+    expect(paths["/qsa/candidates"].get).toBeDefined();
+    expect(paths["/qsa/assignments"].get).toBeDefined();
+    expect(paths["/qsa/assignments"].post).toBeDefined();
+    expect(paths["/qsa/assignments/{assignmentId}"].patch).toBeDefined();
+    expect(paths["/qsa/assignments/{assignmentId}/claim"].post).toBeDefined();
+    expect(paths["/qsa/assignments/{assignmentId}/start"].post).toBeDefined();
+    expect(paths["/qsa/assignments/{assignmentId}/complete"].post).toBeDefined();
+  });
+
+  it("documents assignment-scoped review mutations", () => {
+    expect(paths["/qsa/assignments/{assignmentId}/review"].get).toBeDefined();
+    expect(paths["/qsa/assignments/{assignmentId}/attest"].post).toBeDefined();
+    expect(paths["/qsa/assignments/{assignmentId}/disputes/{disputeId}/moderate"].post).toBeDefined();
+    for (const name of ["QsaAssignment", "QsaAssignmentCreate", "QsaAssignmentUpdate", "QsaReview", "QsaCandidateReport"]) {
+      expect(schemas[name], `missing schema ${name}`).toBeDefined();
+    }
   });
 });

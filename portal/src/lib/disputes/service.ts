@@ -30,18 +30,26 @@ export async function moderateDispute(
   input: { status: "resolved" | "rejected"; note?: string }
 ): Promise<Dispute | null> {
   if (!["resolved", "rejected"].includes(input.status)) throw new DisputeGuardError("status must be resolved or rejected");
-  return withTenant(ctx.organizationId, async (tx) => {
-    const dispute = await tx.dispute.findUnique({ where: { id: disputeId } });
-    if (!dispute) return null;
-    if (getAppMode() === "prod" && !ctx.isStaff) throw new DisputeGuardError("dispute moderation requires a staff reviewer in prod");
-    if (dispute.status !== "open") throw new DisputeGuardError("only open disputes can be moderated");
-    const updated = await tx.dispute.update({
-      where: { id: disputeId },
-      data: { status: input.status, resolutionNote: input.note ?? null, moderatedById: ctx.userId, moderatedAt: new Date() },
-    });
-    await recordAudit(ctx, "finding.dispute.moderated", "Dispute", disputeId, { status: "open" }, { status: input.status, note: input.note ?? null }, undefined, tx);
-    return updated;
+  return withTenant(ctx.organizationId, (tx) => moderateDisputeOnTransaction(ctx, tx, disputeId, input));
+}
+
+/** Caller-owned transaction variant for assignment-scoped QSA moderation. */
+export async function moderateDisputeOnTransaction(
+  ctx: TenantContext,
+  tx: Prisma.TransactionClient,
+  disputeId: string,
+  input: { status: "resolved" | "rejected"; note?: string },
+): Promise<Dispute | null> {
+  const dispute = await tx.dispute.findUnique({ where: { id: disputeId } });
+  if (!dispute) return null;
+  if (getAppMode() === "prod" && !ctx.isStaff) throw new DisputeGuardError("dispute moderation requires a staff reviewer in prod");
+  if (dispute.status !== "open") throw new DisputeGuardError("only open disputes can be moderated");
+  const updated = await tx.dispute.update({
+    where: { id: disputeId },
+    data: { status: input.status, resolutionNote: input.note ?? null, moderatedById: ctx.userId, moderatedAt: new Date() },
   });
+  await recordAudit(ctx, "finding.dispute.moderated", "Dispute", disputeId, { status: "open" }, { status: input.status, note: input.note ?? null }, undefined, tx);
+  return updated;
 }
 
 export async function listDisputes(ctx: TenantContext, filter: { findingId?: string } = {}): Promise<Dispute[]> {

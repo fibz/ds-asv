@@ -57,6 +57,216 @@ tags:
     description: User center — org profile, team members, sessions, audit trail
 
 paths:
+  /qsa/candidates:
+    get:
+      tags: [qsa]
+      summary: List report candidates eligible for manual QSA assignment
+      operationId: listQsaCandidates
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Eligible submitted reports
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [candidates]
+                properties:
+                  candidates:
+                    type: array
+                    items: { $ref: '#/components/schemas/QsaCandidateReport' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /qsa/assignments:
+    get:
+      tags: [qsa]
+      summary: List QSA assignments
+      operationId: listQsaAssignments
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/QsaAssignmentStatus' }
+      responses:
+        '200':
+          description: Assignments visible to the QSA organization
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [assignments]
+                properties:
+                  assignments:
+                    type: array
+                    items: { $ref: '#/components/schemas/QsaAssignment' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [qsa]
+      summary: Create a queued or direct QSA assignment
+      operationId: createQsaAssignment
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QsaAssignmentCreate' }
+      responses:
+        '201':
+          description: Assignment created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assignment: { $ref: '#/components/schemas/QsaAssignment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /qsa/assignments/{assignmentId}:
+    parameters:
+      - name: assignmentId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [qsa]
+      summary: Get a QSA assignment
+      operationId: getQsaAssignment
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Assignment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assignment: { $ref: '#/components/schemas/QsaAssignment' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [qsa]
+      summary: Reassign or cancel a QSA assignment
+      operationId: updateQsaAssignment
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QsaAssignmentUpdate' }
+      responses:
+        '200':
+          description: Updated assignment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assignment: { $ref: '#/components/schemas/QsaAssignment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /qsa/assignments/{assignmentId}/claim:
+    post:
+      tags: [qsa]
+      summary: Claim a queued assignment
+      operationId: claimQsaAssignment
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Assignment claimed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /qsa/assignments/{assignmentId}/start:
+    post:
+      tags: [qsa]
+      summary: Start an assigned review
+      operationId: startQsaReview
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Review started }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /qsa/assignments/{assignmentId}/complete:
+    post:
+      tags: [qsa]
+      summary: Complete an active QSA review
+      operationId: completeQsaAssignment
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Assignment completed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /qsa/assignments/{assignmentId}/review:
+    get:
+      tags: [qsa]
+      summary: Load assignment-scoped customer evidence
+      operationId: getQsaReview
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Assignment review workspace data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  review: { $ref: '#/components/schemas/QsaReview' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /qsa/assignments/{assignmentId}/attest:
+    post:
+      tags: [qsa]
+      summary: Attest the assigned report
+      operationId: attestQsaReport
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QsaAttestation' }
+      responses:
+        '200': { description: Updated review }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /qsa/assignments/{assignmentId}/disputes/{disputeId}/moderate:
+    post:
+      tags: [qsa]
+      summary: Moderate a dispute through the assigned review
+      operationId: moderateQsaDispute
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DisputeModeration' }
+      responses:
+        '200': { description: Updated review }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /auth/api-keys:
     post:
       tags: [Auth]
@@ -243,6 +453,50 @@ paths:
               schema: { $ref: '#/components/schemas/Scan' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /scans/{scanId}/dispatch:
+    post:
+      operationId: dispatchScan
+      summary: Dispatch a pending scan to the configured scanner (scan.run)
+      tags: [user-center, scans]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: scanId, in: path, required: true, schema: { type: string } }
+      responses:
+        '202':
+          description: Scan manifest accepted by the scanner
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [accepted] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500':
+          description: Scanner dispatch failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /scanner/health:
+    get:
+      operationId: getScannerHealth
+      summary: Read authenticated scanner API liveness (scan.view)
+      tags: [user-center, scans]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Scanner API is reachable
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScannerHealth' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '503':
+          description: Scanner API is unavailable or returned invalid health data
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScannerHealthUnavailable' }
   /scans/{scanId}/findings:
     post:
       operationId: ingestFindings
@@ -305,6 +559,38 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Report' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /reports/{reportId}/download:
+    get:
+      operationId: downloadReport
+      summary: Download a tenant-scoped report evidence bundle (report.view)
+      tags: [user-center, scans]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: reportId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: JSON report evidence bundle
+          headers:
+            Content-Disposition:
+              description: Attachment filename for the report evidence bundle
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [report, scan, findings, final]
+                properties:
+                  report: { $ref: '#/components/schemas/Report' }
+                  scan: { $ref: '#/components/schemas/Scan' }
+                  findings:
+                    type: array
+                    items: { $ref: '#/components/schemas/Finding' }
+                  final: { type: boolean }
+                  attestation: { $ref: '#/components/schemas/ReportAttestation' }
+                  scope: { type: object, nullable: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
   /reports/{reportId}/attest:
     post:
@@ -1456,6 +1742,19 @@ components:
         targets:
           type: array
           items: { $ref: '#/components/schemas/ScanTarget' }
+    ScannerHealth:
+      type: object
+      required: [available, service, version]
+      properties:
+        available: { type: boolean, enum: [true] }
+        service: { type: string, example: asv-scanner-api }
+        version: { type: string, example: 1.0.0 }
+    ScannerHealthUnavailable:
+      type: object
+      required: [available, error]
+      properties:
+        available: { type: boolean, enum: [false] }
+        error: { type: string }
     Report:
       type: object
       description: >
@@ -1796,3 +2095,76 @@ components:
         secret:
           type: string
           description: HMAC signing secret
+
+    QsaAssignmentStatus:
+      type: string
+      enum: [queued, assigned, in_review, completed, cancelled]
+
+    QsaCandidateReport:
+      type: object
+      required: [reportId, customerOrganizationId, customerName, reportStatus, createdAt]
+      properties:
+        reportId: { type: string }
+        customerOrganizationId: { type: string }
+        customerName: { type: string }
+        reportStatus: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    QsaAssignment:
+      type: object
+      required: [id, qsaOrganizationId, customerOrganizationId, reportId, status, createdByUserId, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        qsaOrganizationId: { type: string }
+        customerOrganizationId: { type: string }
+        reportId: { type: string }
+        assigneeUserId: { type: [string, 'null'] }
+        createdByUserId: { type: string }
+        status: { $ref: '#/components/schemas/QsaAssignmentStatus' }
+        dueAt: { type: [string, 'null'], format: date-time }
+        notes: { type: [string, 'null'] }
+        claimedAt: { type: [string, 'null'], format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    QsaAssignmentCreate:
+      type: object
+      required: [reportId]
+      properties:
+        reportId: { type: string }
+        assigneeUserId: { type: [string, 'null'] }
+        dueAt: { type: string, format: date-time }
+        notes: { type: string, maxLength: 4000 }
+
+    QsaAssignmentUpdate:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [reassign, cancel] }
+        assigneeUserId: { type: [string, 'null'] }
+        reason: { type: string, maxLength: 2000 }
+
+    QsaAttestation:
+      type: object
+      properties:
+        reason: { type: string, maxLength: 2000 }
+
+    QsaReview:
+      type: object
+      required: [assignment, customer, report, scan, findings, disputes, isFinal]
+      properties:
+        assignment: { $ref: '#/components/schemas/QsaAssignment' }
+        customer:
+          type: object
+          required: [id, name]
+          properties:
+            id: { type: string }
+            name: { type: string }
+        report: { type: object }
+        scan: { type: object }
+        scope: { type: [object, 'null'] }
+        findings: { type: array, items: { type: object } }
+        disputes: { type: array, items: { $ref: '#/components/schemas/Dispute' } }
+        isFinal: { type: boolean }

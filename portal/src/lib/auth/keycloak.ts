@@ -38,6 +38,18 @@ function keycloakIssuer(): string {
   return issuer.replace(/\/+$/, "");
 }
 
+/**
+ * Internal Keycloak base URL for server-to-server calls. In production the
+ * public issuer terminates TLS with a self-signed certificate at the proxy;
+ * using the Docker network here avoids making Node trust that browser-facing
+ * certificate. Token issuer validation still uses keycloakIssuer(), so tokens
+ * are still checked against the public issuer.
+ */
+function keycloakInternalIssuer(): string {
+  const internal = process.env.KEYCLOAK_INTERNAL_ISSUER;
+  return (internal || keycloakIssuer()).replace(/\/+$/, "");
+}
+
 function keycloakClientId(): string {
   const clientId = process.env.KEYCLOAK_CLIENT_ID;
   if (!clientId) {
@@ -54,7 +66,7 @@ let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 function getJwks(): ReturnType<typeof createRemoteJWKSet> {
   if (!jwks) {
     jwks = createRemoteJWKSet(
-      new URL(`${keycloakIssuer()}/protocol/openid-connect/certs`)
+      new URL(`${keycloakInternalIssuer()}/protocol/openid-connect/certs`)
     );
   }
   return jwks;

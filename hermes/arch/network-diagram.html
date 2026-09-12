@@ -1,0 +1,160 @@
+<style>
+  .wrap { color: var(--foreground); font-size: 13px; }
+  .title { font-size: 15px; font-weight: 700; }
+  .sub { font-size: 11.5px; color: var(--muted-foreground); margin-top: 3px; }
+  .hdr { margin-bottom: 10px; }
+  svg { color: var(--foreground); display: block; }
+  svg text { fill: var(--foreground); font-family: inherit; }
+  svg text.def { fill: var(--accent); }
+  table { border-collapse: collapse; width: 900px; margin-top: 14px; font-size: 12px; }
+  th, td { border-bottom: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { color: var(--muted-foreground); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  code { color: var(--accent); font-size: 11.5px; }
+  .ok   { color: var(--muted-foreground); }
+  .warn { color: var(--foreground); }
+  .bad  { color: var(--accent); font-weight: 600; }
+  .notes { margin-top: 14px; border-left: 2px solid var(--border); padding-left: 12px; }
+  .nh { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); font-weight: 600; }
+  .notes ul { margin: 6px 0 0 0; padding-left: 16px; }
+  .notes li { margin-bottom: 4px; font-size: 12px; color: var(--muted-foreground); }
+</style>
+
+<div class="wrap">
+  <div class="hdr">
+    <div class="title">ds-asv network — as described, 2026-09-12</div>
+    <div class="sub">Solid = confirmed by config, routing table or your statement &nbsp;·&nbsp; Dashed = planned or unverified &nbsp;·&nbsp; <span class="bad">accent = known defect</span></div>
+  </div>
+
+  <svg viewBox="0 0 900 620" width="900" height="620" role="img" aria-label="ds-asv network diagram">
+    <defs>
+      <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="currentColor"/>
+      </marker>
+      <marker id="ard" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="currentColor" opacity="0.5"/>
+      </marker>
+    </defs>
+
+    <!-- INTERNET -->
+    <ellipse cx="450" cy="58" rx="118" ry="36" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 4"/>
+    <text x="450" y="55" text-anchor="middle" font-size="14" font-weight="600">Internet</text>
+    <text x="450" y="72" text-anchor="middle" font-size="10.5" opacity="0.6">public</text>
+
+    <!-- HOME LAN -->
+    <rect x="14" y="150" width="306" height="336" rx="10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 4" opacity="0.5"/>
+    <text x="26" y="171" font-size="11.5" font-weight="600" opacity="0.75">Home LAN · 192.168.1.0/24</text>
+    <text x="26" y="186" font-size="10" opacity="0.5">gw 192.168.1.1</text>
+
+    <rect x="112" y="200" width="110" height="32" rx="6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+    <text x="167" y="220" text-anchor="middle" font-size="11">192.168.1.1</text>
+
+    <rect x="34" y="258" width="266" height="212" rx="9" fill="none" stroke="currentColor" stroke-width="1.7"/>
+    <text x="48" y="280" font-size="13" font-weight="700">heaven</text>
+    <text x="48" y="296" font-size="10.5" opacity="0.65">dev machine · enp5s0 192.168.1.4/24</text>
+
+    <rect x="48" y="308" width="238" height="26" rx="5" fill="none" stroke="currentColor" stroke-width="1" opacity="0.55"/>
+    <text x="58" y="325" font-size="10.5">docker · hermes · source → GitHub</text>
+
+    <rect x="48" y="342" width="238" height="46" rx="5" fill="none" stroke="currentColor" stroke-width="1" opacity="0.55"/>
+    <text x="58" y="358" font-size="10.5">docker bridges 10.0.1–10.0.7.0/24</text>
+    <text x="58" y="374" font-size="10" opacity="0.65">portal_default · asv-keycloak_default</text>
+
+    <rect x="48" y="396" width="238" height="58" rx="5" fill="none" stroke="currentColor" stroke-width="1" opacity="0.55"/>
+    <text x="58" y="412" font-size="10.5">scanner + dev copy of prod stack</text>
+    <text x="58" y="428" font-size="10" opacity="0.65">only ds-asv-pg running today</text>
+    <text x="58" y="444" font-size="10" opacity="0.65">Keycloak container exited</text>
+
+    <!-- AZURE -->
+    <rect x="576" y="150" width="310" height="452" rx="10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 4" opacity="0.5"/>
+    <text x="588" y="171" font-size="11.5" font-weight="600" opacity="0.75">Azure</text>
+
+    <rect x="592" y="186" width="278" height="32" rx="6" fill="none" stroke="currentColor" stroke-width="1" opacity="0.65"/>
+    <text x="602" y="206" font-size="10.5">172.16.0.0/24 — shared internal segment</text>
+
+    <!-- purple -->
+    <rect x="592" y="238" width="278" height="240" rx="9" fill="none" stroke="currentColor" stroke-width="1.9"/>
+    <text x="606" y="260" font-size="13" font-weight="700">purple</text>
+    <text x="606" y="276" font-size="10.5" opacity="0.65">PRODUCTION · Kali · eth0 172.16.0.4/24</text>
+    <text x="606" y="290" font-size="10.5" opacity="0.65">public 74.156.0.13</text>
+
+    <rect x="606" y="300" width="250" height="40" rx="5" fill="none" stroke="currentColor" stroke-width="1" opacity="0.55"/>
+    <text x="616" y="316" font-size="10.5">app tier: api :8000 · worker · beat</text>
+    <text x="616" y="331" font-size="10" opacity="0.65">db :8880 · minio :9000/:9001 · redis :6379</text>
+
+    <rect x="606" y="346" width="250" height="26" rx="5" fill="none" stroke="currentColor" stroke-width="1" opacity="0.55"/>
+    <text x="616" y="364" font-size="10.5">keycloak :8080 · docker</text>
+
+    <rect x="606" y="378" width="250" height="40" rx="5" fill="none" stroke="currentColor" stroke-width="1" opacity="0.55"/>
+    <text x="616" y="394" font-size="10.5">greenbone DB · gvmd · GVM 22.4</text>
+    <text x="616" y="409" font-size="10" opacity="0.65">the CVE source · 186,323 NVTs</text>
+
+    <rect x="606" y="424" width="250" height="42" rx="5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="5 3"/>
+    <text x="616" y="440" font-size="10.5" font-weight="600">vault :8200 — referenced, nothing serves it</text>
+    <text x="616" y="455" font-size="10" opacity="0.65">worker + beat both point at it</text>
+
+    <!-- blue -->
+    <rect x="592" y="496" width="278" height="90" rx="9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="6 4" opacity="0.8"/>
+    <text x="606" y="518" font-size="13" font-weight="700">blue</text>
+    <text x="606" y="534" font-size="10.5" opacity="0.65">FAILOVER — NOT BUILT · Kali</text>
+    <text x="606" y="550" font-size="10.5" opacity="0.65">eth0 172.16.0.5/24 · public 172.197.208.78</text>
+    <text x="606" y="568" font-size="10" opacity="0.65">no ds-asv code · host needs rebuild</text>
+
+    <!-- EDGES -->
+    <line x1="167" y1="258" x2="167" y2="234" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+    <text x="175" y="250" font-size="10" opacity="0.75">LAN</text>
+
+    <path d="M222,216 C300,186 340,112 402,86" fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+    <text x="272" y="146" font-size="10" opacity="0.75">routed</text>
+
+    <path d="M520,86 C640,110 700,172 716,238" fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+    <text x="552" y="156" font-size="10.5" font-weight="600">:22 SSH · :8443</text>
+    <text x="552" y="169" font-size="9.5" opacity="0.65">public inbound</text>
+
+    <path d="M300,240 C430,150 520,150 592,246" fill="none" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)" opacity="0.9"/>
+    <text x="356" y="230" font-size="10.5" font-weight="600">SSH → purple :22</text>
+    <text x="356" y="243" font-size="9.5" opacity="0.65">across the public internet — no private overlay</text>
+
+    <path d="M300,430 C400,536 500,560 592,540" fill="none" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)" opacity="0.9"/>
+    <text x="318" y="512" font-size="10.5" font-weight="600">SSH → blue :22</text>
+    <text x="318" y="525" font-size="9.5" opacity="0.65">ssh -L gvmd.sock forward (cchock)</text>
+
+    <line x1="715" y1="478" x2="715" y2="496" stroke="currentColor" stroke-width="1.6" marker-end="url(#ar)" marker-start="url(#ar)"/>
+    <text x="726" y="492" font-size="10" opacity="0.8">same /24 — L2 adjacent</text>
+
+    <path d="M566,584 C420,604 250,592 34,562" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#ard)" opacity="0.7"/>
+    <text x="196" y="600" font-size="10.5" font-weight="600" opacity="0.85">deploy to purple — mechanism UNVERIFIED</text>
+    <text x="196" y="613" font-size="9.5" opacity="0.65">git pull? direct copy? registry?</text>
+
+    <path d="M286,430 C420,486 500,530 640,528" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="3 3" marker-end="url(#ard)"/>
+    <text x="330" y="470" class="def" font-size="10.5" font-weight="700">scanner GREENBONE config → blue</text>
+    <text x="330" y="483" class="def" font-size="9.5">should point at purple (stale)</text>
+  </svg>
+
+  <table>
+    <thead>
+      <tr><th>Edge</th><th>Transport</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>heaven → gateway</td><td>enp5s0 · 192.168.1.4 → 192.168.1.1</td><td class="ok">confirmed — routing table</td></tr>
+      <tr><td>gateway → internet</td><td>LAN uplink, routed</td><td class="ok">confirmed</td></tr>
+      <tr><td>internet → purple :22</td><td>SSH, public inbound</td><td class="ok">confirmed — your description</td></tr>
+      <tr><td>internet → purple :8443</td><td>TLS, public inbound</td><td class="warn">open — owning service still unknown</td></tr>
+      <tr><td>heaven → purple :22</td><td>SSH over public internet</td><td class="ok">confirmed — route + /etc/hosts</td></tr>
+      <tr><td>heaven → blue :22</td><td>SSH + <code>-L</code> gvmd unix-socket forward</td><td class="ok">confirmed — greenbone.env</td></tr>
+      <tr><td>purple ↔ blue</td><td>172.16.0.0/24 L2 adjacency</td><td class="warn">adjacent — no traffic yet</td></tr>
+      <tr><td>heaven → GitHub</td><td>git over HTTPS/SSH</td><td class="ok">confirmed</td></tr>
+      <tr><td>GitHub / heaven → purple</td><td>deploy</td><td class="bad">mechanism unverified</td></tr>
+      <tr><td>scanner → gvmd</td><td><code>GREENBONE_*</code></td><td class="bad">points at blue · should be purple</td></tr>
+    </tbody>
+  </table>
+
+  <div class="notes">
+    <div class="nh">Not drawn — unknown, not assumed</div>
+    <ul>
+      <li>Interfaces carrying <code>74.156.0.13</code> and <code>172.197.208.78</code> — neither appears on the <code>eth0</code>s you pasted, so each host has a further NIC.</li>
+      <li>Whether <code>172.16.0.0/24</code> crosses a cloud boundary (VNet peering / VPN) or is a plain Azure VNet.</li>
+      <li>CDE boundary, data-flow direction, owners and env classification — not established.</li>
+      <li>heaven cannot route to <code>172.16.0.0/24</code>, so every heaven↔Azure edge above transits the public internet.</li>
+    </ul>
+  </div>
+</div>
