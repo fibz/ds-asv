@@ -9,6 +9,7 @@ export const keys = {
   scopeSets: ["scope-sets"] as const,
   findings: (scanId: string) => ["findings", scanId] as const,
   audit: ["audit"] as const,
+  org: ["org"] as const,
 };
 
 export const useAssets = (): UseQueryResult<AssetApi[]> =>
@@ -45,5 +46,17 @@ export function useApprovedScopeVersionId(): string | null {
   const approved = versions.filter((v) => v.status === "approved").sort((a, b) => b.versionNumber - a.versionNumber);
   return approved[0]?.id ?? null;
 }
+
+/** Shape of GET /api/v1/org (portal/src/lib/org/profile.ts → OrgProfile). */
+export interface OrgApi {
+  id: string;
+  name: string;
+  parentOrgId: string | null;
+  parentName: string | null;
+  contacts: { id: string; type: string; name: string; email: string; phone: string | null; escalationOrder: number }[];
+}
+
+export const useOrg = (): UseQueryResult<OrgApi> =>
+  useQuery({ queryKey: keys.org, queryFn: () => apiGet<OrgApi>("/org") });
 
 export { ApiError };
