@@ -310,3 +310,59 @@ The first draft listed eleven open questions. Nine are now settled from files ra
 - Implementation plan: `hermes/customer/plans/2026-09-12-customer-ui-implementation.md` (Task 16)
 - App-level README (local run, build, gotchas): `customer-ui/README.md`
 - Infra inventory / hosts: `hermes/arch/infra-inventory.md`
+
+---
+
+## 9. Deployed 2026-09-12 — what was actually done
+
+The `/app` deployment was carried out and verified. This section is the record, so the next person can see exactly what changed and how to undo it.
+
+### What changed on purple
+
+| # | Change | Detail |
+|---|---|---|
+| 1 | Full backup taken first | `~/backups/ds-asv-portal-20260912-2356.tar.gz` (613K) — whole `ds-asv-portal/`, excluding `node_modules`, `.next`, `.git`, `dist` |
+| 2 | Two portal source files replaced | `portal/src/app/api/v1/reports/route.ts` (new) and `portal/src/lib/scope/service.ts` (sha256 `234773f2…` verified identical to the repo after copy). Nothing else in `portal/` was touched — **not** a tree sync |
+| 3 | Portal image rebuilt and restarted | `docker compose --env-file ../.env build portal` then `up -d portal`. Container logged "No pending migrations to apply". The previous image id is recorded below for rollback |
+| 4 | SPA artifact copied to the host | `rsync --delete customer-ui/dist/ …/deploy/vps/app-dist/` |
+| 5 | `nginx.conf` — `/app` block added | `location = /app` 301; `location = /app/index.html` with `no-store`; `location /app/` with `try_files $uri $uri/ /app/index.html`. Backup: `nginx.conf.bak-20260912` |
+| 6 | `compose.yml` — mount added | `./app-dist:/usr/share/nginx/html/app:ro` under the `proxy` service. Backup: `compose.yml.bak-20260912` |
+| 7 | **`nginx.conf` — `mime.types` included** | See the finding below; backup `nginx.conf.bak-mime`. Applied with `nginx -s reload` (no restart, no downtime) |
+
+### The finding that mattered most
+
+After the `/app` block was in place every check returned **200** — and the app was still broken. `curl` reported:
+
+```
+/app/assets/index-*.js -> 200 text/plain
+```
+
+The custom `nginx.conf` never included `/etc/nginx/mime.types`, so nginx had no type map and labelled everything `text/plain`. A browser refuses to execute `<script type="module">` served with a non-JavaScript MIME type, so the page would have rendered blank while every shell-level check passed. Fixed by adding `include /etc/nginx/mime.types;` and `default_type application/octet-stream;` to the `http` block. Verified afterwards: JS `application/javascript`, CSS `text/css`, HTML `text/html`, SVG `image/svg+xml`.
+
+**Lesson worth keeping:** a 200 from `curl` does not prove a frontend works. The only check that caught this was loading the page in a real browser.
+
+### Verified after deploy (from `purple` itself, and from `heaven` over the public address)
+
+| Check | Result |
+|---|---|
+| `/app/` | 200 `text/html` |
+| `/app` (bare) | 301 → `/app/` |
+| `/app/reports` (client deep link) | 200, serves `index.html` |
+| `/app/assets/*.js` / `*.css` | 200 `application/javascript` / `text/css` |
+| `/api/v1/reports` | 401 (route now exists — it was 404 before the portal rebuild) |
+| `/api/v1/org` | 401 |
+| `/` (portal) | 200 `text/html` unchanged |
+| `/auth/realms/asv-portal` (Keycloak) | 200 unchanged |
+| **Real browser at `https://74.156.0.13:8443/app/sign-in`** | renders the sign-in landing, CTA href `/api/auth/login`, no password field, **zero console errors, zero page errors, zero failed requests** |
+
+### Rollback
+
+1. **Proxy/config only:** restore `nginx.conf.bak-20260912` (or `.bak-mime`), `compose.yml.bak-20260912`, then `docker compose --env-file ../.env up -d proxy`. The SPA simply stops being served; the portal is unaffected either way.
+2. **Portal image:** the previous image id is `sha256:c92371bb99bbbba9bdea2636879d11a8ff2981ce4b6b128ac61da0bb678d6cb3`. Re-tag it as `ds-asv-portal-portal` and `up -d portal`.
+3. **Source:** extract `~/backups/ds-asv-portal-20260912-2356.tar.gz` over `/home/cchock/projects/`.
+
+### Still not done
+
+- **The authenticated path has never been exercised on purple.** The no-backend half is verified in a browser; signing in requires real user credentials, which this session did not handle. Someone should click through sign-in → home → scope → reports once.
+- **The portal source on purple is still a copy, not a checkout.** The image now contains the two files above, but nothing records which revision the rest of it came from. `deploy/vps/` remains unversioned as well.
+- The load balancer is not provisioned, so the realm still lists `https://74.156.0.13:8443/*`.
