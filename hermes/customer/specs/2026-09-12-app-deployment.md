@@ -269,21 +269,38 @@ in the right column and must not be treated as fact.
 | `tsc -b` includes `tsconfig.test.json`; build/test scripts | `customer-ui/package.json`, `tsconfig.json` | 2026-09-12 |
 | `customer-ui/dist` is gitignored | root `.gitignore` | 2026-09-12 |
 
-### Assumed / not verified — treat as open questions
+### Answered by a second read-only inspection (2026-09-12, after this runbook was first written)
 
-| # | Assumption | Why it matters |
+The first draft listed eleven open questions. Nine are now settled from files rather than guesswork.
+
+| # | Was | Now |
 |---|---|---|
-| 1 | Compose **service name is `proxy`** and the container `ds-asv-portal-proxy-1`'s `volumes:` node has the shape shown in §3.2. | The exact `compose.yml` was **not read** (it lives on `purple`, unversioned). The service name is inferred from the container name. Confirm the block before editing. |
-| 2 | `docker compose` resolves relative paths against `deploy/vps/`, so `./app-dist` = `/home/cchock/projects/ds-asv-portal/deploy/vps/app-dist`. | If the compose file is invoked with a different project directory, the mount path is wrong. Confirm with `docker compose config`. |
-| 3 | The bare `/app` (no slash) redirect in §3.1 is wanted. | nginx `location /app/` does **not** match `/app`; without the redirect a bare `/app` falls through to the portal. Confirm the intended behaviour. |
-| 4 | The load balancer's **hostname** and the exact redirect-URI string to register. | Cannot be derived from this repo or from `purple`; must be read off the real LB. Login fails until it is registered. |
-| 5 | The portal's `asv_session` cookie `Path` / `SameSite` / `Secure` allows **both `/app` and `/api`** on the deployed origin. | If `Path=/api`, `/app` pages are unauthenticated. **Record the actual `Set-Cookie` header** and confirm; if the path is narrower than `/`, the portal's cookie path must widen (a portal change, not a proxy one). |
-| 6 | TLS **re-encrypt vs passthrough** at the LB is undecided. | Determines whose certificate a browser sees and what the LB must be configured to trust. |
-| 7 | The mechanism that copies `customer-ui/dist` from `heaven` to `purple:…/deploy/vps/app-dist/`. | `dist/` is not committed and is not on `purple` today; the deploy must move the artifact by some human-run method (e.g. `rsync`). Not chosen here. |
-| 8 | The portal's Keycloak callback route is exactly `/api/auth/callback`. | Taken from the repo's recorded portal routes; **not observed on the host**. The redirect URI registered at the LB must equal, exactly, what the portal sends. |
-| 9 | The portal's logout redirect to its own `/sign-in` does not need an `/app` alias. | Recorded plan quirk: signing out lands on the **portal's** `/sign-in`, not `/app/sign-in`. Confirm whether that is acceptable or an alias is needed. |
-| 10 | `npm run dev` in `portal/` listens on `127.0.0.1:3000` (Next.js default), matching the Vite proxy. | Not re-verified here; the proxy target is fixed at `:3000`. |
-| 11 | No request path outside `/app/`, `/api/`, `/auth/` needs routing. | If the SPA later adds other top-level paths, the nginx block must grow. |
+| 1 | Service name assumed `proxy` | **Confirmed.** `compose.yml` service is `proxy` (`nginx:1.27-alpine`), with `./nginx.conf:/etc/nginx/nginx.conf:ro` and `./certs:/etc/nginx/certs:ro`. Adding `./app-dist:/usr/share/nginx/html/app:ro` follows the existing pattern exactly. |
+| 2 | Relative-mount base assumed | **Confirmed.** The compose project's working dir is `/home/cchock/projects/ds-asv-portal/deploy/vps`, so `./app-dist` lands there. |
+| 3 | Is the bare-`/app` redirect wanted? | **Decision: yes.** `location /app/` does not match bare `/app`; without a redirect it falls through to the portal. Ship the 301. |
+| 5 | Cookie scope unknown | **Confirmed, and it is fine.** `sessionCookieOptions()` in `portal/src/lib/auth/session-cookie.ts` sets `httpOnly`, `SameSite=Lax`, `Secure` when `APP_MODE=prod`, **`Path=/`**, 8h max-age, no `Domain`. So `/app` and `/api` share it on one origin. No portal change needed. |
+| 8 | Callback path assumed | **Confirmed in the repo.** `login/route.ts` builds `redirectUri = `${origin}/api/auth/callback``. The LB's registered URI must equal that. |
+| 10 | Portal dev port assumed | **Confirmed.** The `portal` service `expose: 3000`; Next.js dev also defaults to 3000, matching the Vite proxy target. |
+| 11 | No other routing needed | **Confirmed.** The live nginx routes only `/auth/`, `/`, and (new) `/app/`. |
+| 4 | LB hostname unknown | **Mechanism now known; only the value is missing.** The compose parameterises **`PUBLIC_HOST`** and requires it (`KEYCLOAK_ISSUER: https://${PUBLIC_HOST}/auth/realms/asv-portal`, `PUBLIC_ORIGIN: https://${PUBLIC_HOST}`). The realm is generated: `render-realm.sh` substitutes `__PUBLIC_HOST__` into `realm.template.json` (`redirectUris: ["https://__PUBLIC_HOST__/*"]`) to produce `realm.json`. **When the LB host exists: set `PUBLIC_HOST`, re-run `render-realm.sh`, restart keycloak.** Today `realm.json` holds `https://74.156.0.13:8443/*` — purple's raw address. |
+| 7 | Artifact copy mechanism | **Decision:** `rsync -av --delete customer-ui/dist/ purple:…/deploy/vps/app-dist/`, run by hand as part of the manual push. `dist/` stays uncommitted. |
+
+### Still genuinely open — these need a human answer
+
+| # | Open question | Why it blocks |
+|---|---|---|
+| 4b | **The load balancer's hostname** (the value for `PUBLIC_HOST`). | Cannot be derived from this repo or from `purple`. Login fails until the realm lists it. |
+| 6 | **TLS re-encrypt vs passthrough** at the LB. | Decides whose certificate a browser sees, and what the LB must trust. An Azure configuration choice. |
+| 9 | Whether the portal's logout redirect to its own `/sign-in` is acceptable, or `/sign-in` should be aliased to `/app`. | Cosmetic but user-visible: signing out currently leaves the SPA. |
+
+### New findings from the second inspection
+
+| Finding | Why it matters |
+|---|---|
+| **Keycloak realm has `sslRequired: none`** while `APP_MODE=prod`. | Hardening gap: the realm will not itself require HTTPS. TLS is terminated in front, so it is not exposed today — but it should be `external` in production. |
+| **Two compose files exist**: `/home/cchock/projects/ds-asv-portal/compose.yml` (top level, beside a `Caddyfile`) and `deploy/vps/compose.yml`. | Only the latter is live (confirmed by the running stack's working dir). Editing the wrong one silently does nothing. The top-level pair looks like an earlier iteration and should be deleted or clearly marked stale. |
+| **The stack's environment lives in `/home/cchock/projects/ds-asv-portal/.env`** (mode 600), not in `deploy/vps/`. | `PUBLIC_HOST`, `DB_ADMIN_PASSWORD`, `APP_DB_PASSWORD`, `MANIFEST_SECRET` and the Keycloak vars are all required by compose and come from there. Whoever deploys needs that file present and correct. |
+| **`/home/cchock/projects/ds-asv-portal/` is a copied tree, not a clone** — it contains `portal/`, `scanner/`, `docs/`, `AGENTS.md`. | Explains why it is not a git repository. It is also why the running portal's provenance is unclear: there is no commit to say which code is deployed. |
 
 ---
 
