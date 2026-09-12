@@ -59,3 +59,7 @@ portal/node_modules
 
 # Host-local scanner tooling (installed per AGENTS.md, not committed)
 scanner/scripts/testssl.sh-*/
+
+# customer-ui (standalone Vite app)
+customer-ui/node_modules/
+customer-ui/dist/
