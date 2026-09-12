@@ -11,6 +11,8 @@ export const routes = [
   { path: "/sign-in", element: <SignInLanding />, chrome: false },
   { path: "/", element: <Home />, chrome: true },
   { path: "/assets", element: <Assets />, chrome: true },
+  { path: "/assets/new", element: <Placeholder title="Add asset" pass="second pass" />, chrome: true },
+  { path: "/assets/import", element: <Placeholder title="Import assets" pass="second pass" />, chrome: true },
   { path: "/scope", element: <Scope />, chrome: true },
   { path: "/scans", element: <Scans />, chrome: true },
   { path: "/reports", element: <Reports />, chrome: true },
