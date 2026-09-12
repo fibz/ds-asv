@@ -407,9 +407,12 @@ The custom `nginx.conf` never included `/etc/nginx/mime.types`, so nginx had no 
 
 ### Rollback
 
-1. **Proxy/config only:** restore `nginx.conf.bak-20260912` (or `.bak-mime`), `compose.yml.bak-20260912`, then `docker compose --env-file ../.env up -d proxy`. The SPA simply stops being served; the portal is unaffected either way.
-2. **Portal image:** the previous image id is `sha256:c92371bb99bbbba9bdea2636879d11a8ff2981ce4b6b128ac61da0bb678d6cb3`. Re-tag it as `ds-asv-portal-portal` and `up -d portal`.
-3. **Source:** extract `~/backups/ds-asv-portal-20260912-2356.tar.gz` over `/home/cchock/projects/`.
+> **Corrected 2026-09-12 (late): the old image ids are gone.** Rebuilding with the same tag leaves the previous image dangling, and nothing on purple retains those — `sha256:c92371bb…`, `sha256:6a7b7d49…` and `sha256:d44d4aa2…` are all absent from `docker images` now. **Do not plan a rollback around re-tagging an old image id.** Roll back from source instead.
+
+1. **Proxy / config only:** restore whichever of `nginx.conf.bak-*` / `compose.yml.bak-20260912` you need, then `cd deploy/vps && sudo docker compose --env-file /home/cchock/projects/ds-asv-portal/.env up -d proxy`. The SPA simply stops being served; the portal is unaffected either way.
+2. **Portal code — the intended path:** the deployed tree is a git repo (§11, baseline `55ad2f7`). `git -C /home/cchock/projects/ds-asv-portal diff` shows everything changed since the baseline, `git checkout -- <path>` reverts a file, then rebuild and `up -d portal`.
+3. **Full source restore:** extract `~/backups/ds-asv-portal-20260912-2356.tar.gz` over `/home/cchock/projects/` (it pre-dates the SPA work; use only if the git baseline is unusable).
+4. **SPA only:** `rsync` an earlier `customer-ui/dist/` into `deploy/vps/app-dist/` — no container action needed, the mount is live.
 
 ### Still not done
 
@@ -480,7 +483,7 @@ As of this incident that comparison showed parity except for files whose repo ve
 
 | Item | State |
 |---|---|
-| Portal image | rebuilt from the **reconciled** source (repo commit `d2a3fbad`) — `publicOrigin`, `internalIssuer`, `keycloakInternalIssuer` now in the repo, with validated `returnTo` on top |
+| Portal image | rebuilt from the **reconciled** source (repo commit `d2a3fbad`) — `publicOrigin`, `internalIssuer`, `keycloakInternalIssuer` now in the repo, with validated `returnTo` on top. **Known-good running image: `sha256:560891f007fbb3d467eb050ae175b7c6ddf66851877fe8d181ed0352335c1e32`** (started 2026-09-12T16:46Z) |
 | `redirect_uri` | `https://74.156.0.13:8443/api/auth/callback` ✅ |
 | Sign-in from `/app` | **lands in `/app`** ✅ (was `<origin>/dashboard` → `/sign-in` → `/customer`) |
 | Off-site `returnTo` | refused ✅ |
