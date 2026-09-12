@@ -289,7 +289,7 @@ The first draft listed eleven open questions. Nine are now settled from files ra
 
 | # | Open question | Why it blocks |
 |---|---|---|
-| 4b | **The load balancer's hostname** (the value for `PUBLIC_HOST`). | Cannot be derived from this repo or from `purple`. Login fails until the realm lists it. |
+| 4b | **The load balancer's hostname** (the value for `PUBLIC_HOST`). | Confirmed by the user on 2026-09-12: **the load balancer is not provisioned yet.** Blocked on Azure, not on this work. Nothing to do until it exists — then set `PUBLIC_HOST`, re-render the realm, restart Keycloak. |
 | 6 | **TLS re-encrypt vs passthrough** at the LB. | Decides whose certificate a browser sees, and what the LB must trust. An Azure configuration choice. |
 | 9 | Whether the portal's logout redirect to its own `/sign-in` is acceptable, or `/sign-in` should be aliased to `/app`. | Cosmetic but user-visible: signing out currently leaves the SPA. |
 
