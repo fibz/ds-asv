@@ -1,0 +1,72 @@
+# ASV scanner stack for the purple edge.
+#
+# Deliberately a SEPARATE compose project from the portal: the scanner has its
+# own database, its own lifecycle, and rebuilding it must never touch the portal.
+# It joins the portal's network as an external network so the existing nginx can
+# proxy to `scanner-api:8000` by name.
+#
+#   cd deploy/vps
+#   sudo docker compose --env-file /home/cchock/projects/ds-asv-portal/.env \
+#     -f scanner.compose.yml up -d --build
+#
+# Run from deploy/vps: the build context is ../../scanner, matching how the
+# portal service finds ../../portal.
+name: ds-asv-scanner
+
+services:
+  scanner-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: asv_scanner
+      POSTGRES_USER: asv_scanner
+      POSTGRES_PASSWORD: ${SCANNER_DB_PASSWORD:?set SCANNER_DB_PASSWORD}
+    volumes:
+      - scanner-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U asv_scanner -d asv_scanner"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [edge]
+
+  scanner-api:
+    build:
+      context: ../../scanner
+      dockerfile: Dockerfile
+    image: asv-scanner:latest
+    restart: unless-stopped
+    depends_on:
+      scanner-db:
+        condition: service_healthy
+    # nmap needs raw sockets. The image sets the file capabilities on the
+    # binary, so the non-root `app` user can use them; these caps back that up.
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      # prod: config_guard refuses placeholder/dev credentials at startup, so a
+      # misconfigured deploy fails loudly here instead of running insecurely.
+      APP_MODE: prod
+      DATABASE_URL: postgresql+psycopg2://asv_scanner:${SCANNER_DB_PASSWORD:?}@scanner-db:5432/asv_scanner
+      API_BEARER_TOKEN: ${SCANNER_API_TOKEN:?set SCANNER_API_TOKEN}
+      # Same secret as the portal so signed scan manifests verify on both sides.
+      MANIFEST_SECRET: ${MANIFEST_SECRET:?set MANIFEST_SECRET}
+      # Real Greenbone-derived cache (54k product/range records), shipped to
+      # scanner-data/. Without it the engine falls back to the demo CPEMapper
+      # and finds nothing real.
+      GREENBONE_FEED_PATH: /data/greenbone_cves.json
+      EVIDENCE_LOCAL_DIR: /data/evidence
+      PORTAL_BASE_URL: https://${PUBLIC_HOST:?set PUBLIC_HOST}
+      ASV_NAME: ASV Scanner Platform
+    volumes:
+      - /home/cchock/projects/ds-asv-portal/scanner-data:/data
+    networks: [edge]
+
+networks:
+  edge:
+    external: true
+    name: ds-asv-portal_default
+
+volumes:
+  scanner-db:
