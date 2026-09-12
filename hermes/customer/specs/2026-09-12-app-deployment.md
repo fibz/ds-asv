@@ -416,3 +416,56 @@ The custom `nginx.conf` never included `/etc/nginx/mime.types`, so nginx had no 
 - **The authenticated path has never been exercised on purple.** The no-backend half is verified in a browser; signing in requires real user credentials, which this session did not handle. Someone should click through sign-in → home → scope → reports once.
 - **The portal source on purple is still a copy, not a checkout.** The image now contains the two files above, but nothing records which revision the rest of it came from. `deploy/vps/` remains unversioned as well.
 - The load balancer is not provisioned, so the realm still lists `https://74.156.0.13:8443/*`.
+
+---
+
+## 11. Incident: deploying the repo broke every login (2026-09-12)
+
+### What happened
+
+A deploy that copied the repo's `portal/src/lib/auth/{session-cookie.ts}` and `api/auth/{login,callback}/route.ts` over purple's versions **broke all logins**, for both the new UI and the old one (they share the login route).
+
+`/api/auth/login` began sending Keycloak:
+
+```
+redirect_uri = https://0.0.0.0:3000/api/auth/callback
+```
+
+The realm only registers `https://74.156.0.13:8443/*`, so Keycloak refused with *Invalid parameter: redirect_uri* before the user could even type a password.
+
+### Root cause
+
+**The deployed tree carried three fixes that were never committed to this repo**, and the copy removed them:
+
+| Fix | Deployed (was) | Repo (had) |
+|---|---|---|
+| `publicOrigin()` — browser-facing OAuth origin | `PUBLIC_ORIGIN ?? requestOrigin` | raw `request.nextUrl.origin` → `0.0.0.0:3000` |
+| `internalIssuer()` — server-side code exchange | `KEYCLOAK_INTERNAL_ISSUER` (Docker network) | public URL, so Node had to trust the proxy's self-signed cert |
+| `keycloakInternalIssuer()` — JWKS fetch | `KEYCLOAK_INTERNAL_ISSUER` | public URL, same certificate problem |
+
+The reason is structural, not accidental: **`deploy/vps/` and the deployed `portal/` copy are not a git checkout.** Nothing records which revision is running, so the repo and production had silently drifted.
+
+### The process failure
+
+The first deploy of the evening diffed `scope/service.ts` against purple's copy **before** overwriting it, found it identical apart from the intended change, and generalised from that one file to "the rest of the auth files must match too". That generalisation was never tested. **Diff the pre-existing deployed content of every file you are about to overwrite** — one verified file proves nothing about the next.
+
+### Blast radius and recovery
+
+- Logins only. `/` and `/app/` returned 200 throughout; no data was touched.
+- Recovery: the pre-deploy backup (`~/backups/ds-asv-portal-20260912-2356.tar.gz`) still held the originals. Restoring the three files and rebuilding put `/api/auth/login` back to `redirect_uri=https://74.156.0.13:8443/api/auth/callback`, and a browser sign-in succeeded.
+- Staging build and `up` as separate steps is what made this a failed command rather than a half-applied change.
+
+### Resolution
+
+The three fixes are now **in the repo** (commit `d2a3fbad`), with the validated `returnTo` work layered on top, and tests pinning each one — including the internal-issuer JWKS in its own file, because the JWKS is cached per module instance. `PUBLIC_ORIGIN` and `KEYCLOAK_INTERNAL_ISSUER` are load-bearing production env vars, not optional.
+
+### Standing risk
+
+**The repo still cannot reproduce production.** An unknown amount of `portal/` on purple may differ from git. Before the next deploy, reconcile:
+
+```sh
+ssh purple 'cd /home/cchock/projects/ds-asv-portal/portal && find src -type f \( -name "*.ts" -o -name "*.tsx" \) -print0 | sort -z | xargs -0 sha256sum'
+# compare against the same command run in the repo
+```
+
+As of this incident that comparison showed parity except for files whose repo version was simply newer. It should be re-run before trusting a deploy, and the honest fix is to version `deploy/vps/` and the deployed source so the question stops being open.
