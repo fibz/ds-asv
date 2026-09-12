@@ -27,6 +27,15 @@ describe("Scans", () => {
     expect(screen.getByText(/approved scope is required/i)).toBeInTheDocument();
   });
 
+  it("points the disabled button at the visible reason so it is announced too", () => {
+    vi.mocked(useScans).mockReturnValue({ data: [scan()], isLoading: false, error: null, refetch: vi.fn() } as never);
+    vi.mocked(useScopeSets).mockReturnValue({ data: [], isLoading: false, error: null, refetch: vi.fn() } as never);
+    renderScans();
+    const describedBy = screen.getByRole("button", { name: /New scan/i }).getAttribute("aria-describedby");
+    expect(describedBy).toBe("new-scan-reason");
+    expect(document.getElementById(describedBy as string)?.textContent).toMatch(/approved scope is required/i);
+  });
+
   it("shows status as a word plus a glyph, not colour alone", () => {
     vi.mocked(useScans).mockReturnValue({ data: [scan({ status: "FAILED" })], isLoading: false, error: null, refetch: vi.fn() } as never);
     vi.mocked(useScopeSets).mockReturnValue({ data: [scopeSet], isLoading: false, error: null, refetch: vi.fn() } as never);

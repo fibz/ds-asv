@@ -18,6 +18,7 @@ const RECORD_GLYPH: Record<RecordState, string> = {
 };
 
 const NO_SCOPE_REASON = "An approved scope is required before you can scan";
+const NO_SCOPE_REASON_ID = "new-scan-reason";
 
 export function Scans() {
   const scans = useScans();
@@ -42,7 +43,10 @@ export function Scans() {
           <h1 className="text-[18px] font-semibold">Scans</h1>
           <p className="text-[14px] text-[var(--ink-muted)] mt-1">Every scan this organisation has run, newest first.</p>
         </div>
-        <Button disabled={!hasScope}>
+        <Button
+          disabled={!hasScope}
+          aria-describedby={hasScope ? undefined : NO_SCOPE_REASON_ID}
+        >
           New scan
         </Button>
       </div>
@@ -51,9 +55,10 @@ export function Scans() {
           A disabled control must never be the only place the explanation lives,
           and rendering both would put the same sentence in the DOM twice — which
           duplicates it for screen readers and makes the phrase ambiguous to
-          text queries. One explanation, in plain sight, right beside the button. */}
+          text queries. One explanation, in plain sight, and the button points at
+          it with aria-describedby so assistive tech announces it too. */}
       {!hasScope ? (
-        <p className="text-[12px] text-[var(--ink-muted)] mt-2">{NO_SCOPE_REASON}.</p>
+        <p id={NO_SCOPE_REASON_ID} className="text-[12px] text-[var(--ink-muted)] mt-2">{NO_SCOPE_REASON}.</p>
       ) : null}
 
       <div className="mt-6">

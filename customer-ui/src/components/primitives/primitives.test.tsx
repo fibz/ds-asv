@@ -22,6 +22,11 @@ describe("Button", () => {
     expect(btn).toBeDisabled();
     expect(screen.getByText("An approved scope is required first")).toBeInTheDocument();
   });
+
+  it("keeps a caller-supplied aria-describedby when it renders no reason of its own", () => {
+    render(<Button aria-describedby="why">Run</Button>);
+    expect(screen.getByRole("button", { name: "Run" })).toHaveAttribute("aria-describedby", "why");
+  });
 });
 
 describe("StatusChip", () => {

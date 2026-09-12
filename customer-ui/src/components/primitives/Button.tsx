@@ -11,7 +11,8 @@ const VARIANT_CLASS: Record<Variant, string> = {
 };
 
 export function Button({
-  variant = "primary", disabled, disabledReason, children, className = "", ...rest
+  variant = "primary", disabled, disabledReason, children, className = "",
+  "aria-describedby": ariaDescribedBy, ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; disabledReason?: string; children: ReactNode }) {
   const reasonId = useId();
   return (
@@ -19,7 +20,9 @@ export function Button({
       <button
         {...rest}
         disabled={disabled}
-        aria-describedby={disabled && disabledReason ? reasonId : undefined}
+        // A caller-supplied description wins unless this Button renders its own
+        // reason node; passing it through rest would be clobbered here.
+        aria-describedby={disabled && disabledReason ? reasonId : ariaDescribedBy}
         className={`rounded-[var(--radius)] px-3.5 py-2 text-[14px] font-medium transition-opacity disabled:opacity-50 disabled:cursor-not-allowed ${VARIANT_CLASS[variant]} ${className}`}
       >
         {children}
