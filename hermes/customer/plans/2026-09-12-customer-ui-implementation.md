@@ -1504,6 +1504,7 @@ git commit -m "feat(customer-ui): view models for stages, quarter tasks and the 
 - Produces:
   - `<AppShell stages={StageRow[]} orgName={string} quarter={string} daysRemaining={number} stageAction?={ReactNode}>{children}</AppShell>` (exported from `App.tsx`) — renders nav + context bar + content
   - `<LifecycleNav stages={StageRow[]} />` — Manage group links to `/team /access /audit /settings`
+  - `<SignOutButton />` in the nav footer. It MUST be a real `<form method="post" action={signOutUrl()}>` with a submit button, not a link: the portal's `logout/route.ts` exports `POST` only and answers with a redirect (`NextResponse.redirect("/sign-in")`), so an anchor would 405. Recorded quirk: that redirect lands on the *portal's* `/sign-in`, not the app's `/app/sign-in` — Task 16 may alias `/sign-in` to the app.
   - `<ContextBar orgName quarter daysRemaining action? />`
   - `<StageProgress steps: { label: string; state: StageState }[] />`
   - `<Skeleton lines={number} />`, `<ErrorState message onRetry />`, `<PartialState message onRetry />`, `<PermissionState permission />`

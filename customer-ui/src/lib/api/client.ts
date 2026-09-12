@@ -19,9 +19,10 @@ const SAFE_MESSAGES: Record<number, string> = {
   500: "The service could not complete that request. Try again, and contact support if it persists.",
 };
 
-// T defaults to `any` so an unannotated call site compiles; every real caller
-// in queries.ts passes an explicit response shape.
-export async function apiGet<T = any>(path: string, signal?: AbortSignal): Promise<T> {
+// T defaults to `unknown`, never `any`: an unannotated call site must not
+// silently acquire an untyped value. Every real caller in queries.ts passes an
+// explicit response shape.
+export async function apiGet<T = unknown>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`/api/v1${path}`, {
     method: "GET",
     credentials: "include",
