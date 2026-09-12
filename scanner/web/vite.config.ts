@@ -7,6 +7,10 @@ const apiTarget = process.env.VITE_API_PROXY_TARGET ?? "http://localhost:8000";
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Served under /scanner/ on the production edge (same origin as the portal,
+  // which owns /, and the customer UI at /app/). The router takes its basename
+  // from this, so internal links resolve under the same prefix.
+  base: "/scanner/",
   plugins: [react()],
   server: {
     proxy: {
