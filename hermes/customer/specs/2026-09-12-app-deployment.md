@@ -525,6 +525,8 @@ The four placeholder screens are the intended second-pass scope, not defects. Th
 4. **Second-pass screens** (team, access, audit, settings) and the **dispute/authorisation flows are built** in the SPA, but the four management screens are placeholders.
 5. **`admin@asv.test`'s password is not on the host** — automated end-to-end login depends on it being known.
 
+---
+
 ### Changing the Keycloak realm: two traps
 
 The Keycloak service runs `start --import-realm` with the realm bind-mounted from `deploy/vps/realm.json`, but **the realm lives in the `keycloak-data` volume**, so:
@@ -535,3 +537,58 @@ The Keycloak service runs `start --import-realm` with the realm bind-mounted fro
 **Correct method for any realm change:** update the running realm through the admin API (or console) — e.g. `PUT /auth/admin/realms/asv-portal` with the amended `redirectUris`/`webOrigins` — and treat `realm.json` as documentation of the initial state, not as the live configuration.
 
 **Load-balancer cutover, when a hostname exists:** add `https://<lb-host>/*` to the realm's `redirectUris` + `webOrigins` (admin API), set `PUBLIC_HOST=<lb-host>` in purple's `.env` (it drives `KC_HOSTNAME`), set the portal's `KEYCLOAK_ISSUER` + `PUBLIC_ORIGIN` to `https://<lb-host>`, then recreate the `keycloak` and `portal` containers and verify the full login round trip.
+
+---
+
+## 13. Scanner deployed on purple (2026-09-12)
+
+The ASV scanner stack now runs on purple alongside the portal, behind the same edge.
+
+### What is where
+
+| Piece | Location |
+|---|---|
+| Dashboard (built) | `deploy/vps/scanner-dist/` — served under `/scanner/` |
+| Scanner API + DB | compose project `ds-asv-scanner` (`deploy/vps/scanner.compose.yml`) |
+| Code | `scanner/` on purple (rsynced from the repo, minus venv/node_modules/cache) |
+| CVE cache | `scanner-data/greenbone_cves.json` — 236 MB, **171,007 records** |
+| Evidence | `scanner-data/evidence/` |
+| Operator token | `scanner-data/operator-token.txt` (mode 0600 — **read it yourself; never paste it in chat**) |
+
+### Edge routing (added to `nginx.conf`)
+
+```
+/scanner/   -> the built dashboard (static, SPA fallback to /scanner/index.html)
+/v1/        -> scanner-api:8000   (its own namespace — the portal owns /api/v1/)
+```
+
+The scanner stack joins the portal's network as an **external** network (`ds-asv-portal_default`), so nginx resolves `scanner-api` by name. Backups: `nginx.conf.bak-scanner`, `compose.yml.bak-scanner`.
+
+Deliberately a **separate compose project**: the scanner has its own database and lifecycle, and rebuilding it must never touch the portal.
+
+### Verified live (not assumed)
+
+```
+/scanner/       -> 200 text/html        /       -> 200   portal intact
+/scanner/scans  -> 200 text/html        /app/   -> 200   customer UI intact
+/v1/health      -> 200 {"status":"ok","service":"asv-scanner-api"}
+scanner-api     Up (healthy) · restarts=0
+```
+
+A real scan **through the public edge on purple**: customer scoped to the real test target (`45.33.32.156/32` — no `0.0.0.0/0` widening), scan `ba5fc885…` completed **FAIL** in ~65s with **31 findings (4 critical, 9 high, 15 medium, 3 low)** — CVE-2023-38408, CVE-2016-1908, CVE-2026-60002, CVE-2008-3844 among them. Same result as the heaven run, which proves the Greenbone cache loaded rather than the demo CPEMapper.
+
+### Three bugs hit and fixed during the deploy
+
+1. **zsh does not word-split variables.** `C="sudo docker compose …"; $C build` fails with `no such file or directory` (exit 127) on purple's zsh. Write compose commands out in full in remote scripts.
+2. **0600 source files broke the container.** 20 files in `scanner/` were mode `-rw-------` on heaven; `rsync -a` preserved that into the image, and the non-root `app` user could not import its own modules — the API crash-looped with `PermissionError: /app/app/scoring/base.py`. Fixed at the source (`chmod 644`, excluding `*.env`/keys), not just on the host. **Check file modes before packaging.**
+3. **`SCHEMA_READY` before `up`.** Gunicorn runs 4 workers, each firing the app's startup hook; creating the schema once up front avoids four concurrent `create_all` calls on a fresh database.
+
+### Secrets
+
+`SCANNER_DB_PASSWORD` and `SCANNER_API_TOKEN` were generated on purple with `openssl rand` and appended to `/home/cchock/projects/ds-asv-portal/.env` — values never echoed. `MANIFEST_SECRET` is reused from the portal so signed manifests verify on both sides. `APP_MODE=prod`, so `config_guard` refuses placeholder credentials at startup — a misconfigured deploy fails loudly instead of running insecurely.
+
+### Not done
+
+- **QSA token** (`API_QSA_TOKEN`) is unset, so the QSA role path is not exercisable on purple yet.
+- **Cache refresh on purple** is manual. Purple runs Greenbone itself, so the correct long-term move is to build the cache there via `scripts/refresh_greenbone_cache.sh` rather than shipping 236 MB from heaven.
+- The dashboard loads Google Fonts from the public internet; self-hosting is still an open item.
