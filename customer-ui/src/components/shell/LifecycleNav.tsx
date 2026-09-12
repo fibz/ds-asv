@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { TONE_CLASS, glyphFor, stageLabel, toneForStage } from "../../lib/status";
 import { signOutUrl } from "../../lib/auth/auth";
 import type { StageRow } from "../../lib/viewmodels/stages";
+import { PRODUCT_NAME, PRODUCT_TAGLINE } from "../../lib/brand";
 
 const MANAGE = [
   { name: "Team", href: "/team" },
@@ -15,8 +16,8 @@ export function LifecycleNav({ stages }: { stages: StageRow[] }) {
   return (
     <aside className="hidden min-[900px]:block w-60 shrink-0 bg-[var(--surface)] border-r border-[var(--border)]">
       <div className="px-4 py-4 border-b border-[var(--hairline)]">
-        <div className="text-[14px] font-semibold">T3MP3ST</div>
-        <div className="text-[12px] text-[var(--ink-muted)] mt-0.5">Payment security portal</div>
+        <div className="text-[14px] font-semibold">{PRODUCT_NAME}</div>
+        <div className="text-[12px] text-[var(--ink-muted)] mt-0.5">{PRODUCT_TAGLINE}</div>
       </div>
       <nav aria-label="Scan cycle" className="px-2 py-3">
         {stages.map((s) => {

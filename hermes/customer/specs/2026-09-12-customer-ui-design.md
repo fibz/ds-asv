@@ -312,6 +312,6 @@ Mockups for each decision are in `specs/2026-09-12-ui-mockups/` (see its README 
 1. **Proxy configuration** — the rule that serves `/app` and forwards `/api/*` to the portal is not written yet; it belongs in the deployment doc for the heaven → purple push.
 2. **`GET /api/v1/reports`** — needed before Home and Reports can read real data (§8).
 3. **Home "open findings" total** — decide whether it composes from scan findings or needs the optional list endpoint.
-4. **Product naming** — the shell currently says "T3MP3ST"; the customer-facing product name is unconfirmed.
+4. **Product naming** — settled for now as a deliberate neutral placeholder: `PRODUCT_NAME = "ASV Portal"` in `customer-ui/src/lib/brand.ts`. The real customer-facing brand is still undecided. The wordmark and tagline are single constants, and `brand.test.ts` fails if either is hardcoded in a component — the previous build hardcoded "T3MP3ST" in three files, which made an undecided guess look like a decision.
 5. **Base-path cookie scope** — confirm the session cookie path/domain allows `/app` and `/api` on the same origin in the target deployment.
 6. **Load balancer hostname and Keycloak redirect URIs** — the product's public address is an Azure load balancer in front of `purple:8443`. Its hostname must be registered as a valid redirect URI on the Keycloak client before first use, and it must forward the original `Host` and `X-Forwarded-Proto`. Confirm both against the real load balancer when it is in place; neither can be guessed from this repo.

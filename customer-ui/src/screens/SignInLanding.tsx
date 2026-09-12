@@ -1,6 +1,7 @@
 // customer-ui/src/screens/SignInLanding.tsx
 import { useSearchParams } from "react-router-dom";
 import { signInUrl } from "../lib/auth/auth";
+import { PRODUCT_NAME } from "../lib/brand";
 
 const REASON: Record<string, string> = {
   expired: "Your session has expired. Sign in again to continue where you left off.",
@@ -13,7 +14,7 @@ export function SignInLanding() {
   return (
     <main className="min-h-screen grid place-items-center px-6">
       <div className="w-full max-w-[420px] bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-8">
-        <div className="text-[18px] font-semibold">T3MP3ST</div>
+        <div className="text-[18px] font-semibold">{PRODUCT_NAME}</div>
         <p className="text-[14px] text-[var(--ink-muted)] mt-2">
           Track your quarterly PCI ASV scans, scope approvals and compliance reports in one place.
         </p>

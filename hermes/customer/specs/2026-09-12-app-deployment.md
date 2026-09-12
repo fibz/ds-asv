@@ -313,7 +313,53 @@ The first draft listed eleven open questions. Nine are now settled from files ra
 
 ---
 
-## 9. Deployed 2026-09-12 — what was actually done
+## 9. Authenticated walkthrough — 2026-09-12 (real browser, live)
+
+Performed in a real Chromium against `https://74.156.0.13:8443/app/`, signed in through the actual Keycloak form. This is the first time this app has ever held an authenticated session.
+
+### What works
+
+| Check | Result |
+|---|---|
+| Sign-in | `admin@asv.test` authenticated against the live realm |
+| Session cookie accepted by the SPA | yes — `/app/` renders the app, not the sign-in landing |
+| `GET /api/v1/org` | **200** |
+| `GET /api/v1/assets` | **200** |
+| `GET /api/v1/scope-sets` | **200** |
+| `GET /api/v1/scans` | **200** |
+| `GET /api/v1/reports` | **200** — the route that only exists because of the portal rebuild in §10 |
+| Console / page / failed-request errors | **none** |
+| Real data rendered | org `ATHENA-DFENZ PRIVATE LIMITED`; "Q3 2026 · PCI ASV scan window **18 days left**" (matches the unit test) |
+| Empty states | checklist `0 of 5 done`, locked steps each with a reason, `ASSETS 0` |
+
+### Defect found — signing in from `/app` lands in the OLD UI
+
+`portal/src/app/api/auth/callback/route.ts:56` redirects to:
+
+```ts
+const res = NextResponse.redirect(`${origin}/dashboard`);
+```
+
+**`/dashboard` is not a route in either tree.** Live: `GET /dashboard` → `307` → `/sign-in` → (authenticated) → `/customer`. So a user who starts at `/app/sign-in`, signs in, and expects to arrive in the new UI is dumped into the old one. The new UI cannot complete its own login journey.
+
+**Proposed fix (not yet made):** carry a return target through the OAuth round trip.
+
+1. `customer-ui` `signInUrl()` appends `?returnTo=/app/`;
+2. `portal/src/app/api/auth/login/route.ts` stores it in a short-lived cookie (it currently reads no query params);
+3. the callback redirects to the stored value, **validated as a local path** (`startsWith("/") && !startsWith("//")`) so it cannot become an open redirect;
+4. absent a `returnTo`, behaviour is unchanged — the old UI keeps working.
+
+### Other findings from this session
+
+- **The realm has exactly three users**: `admin` (admin@asv.test, `asv-staff`), `regular-user` (user@asv.test, no roles), `staff-user` (staff@asv.test, `asv-staff`). `deploy/vps/realm.json` is **stale** — it lists only the latter two and omits `admin`, which is the only account with an organisation.
+- **`admin@asv.test`'s password is not stored anywhere on the host.** Direct-grant checks: `staff-user`/`STAFF_PASSWORD` ✅, `regular-user`/`REGULAR_PASSWORD` ✅, `admin` with either ❌ 401. Without that password no automated login into the populated org is possible.
+- **A never-invited Keycloak user gets no organisation.** `provisionUserFromClaims` (`portal/src/lib/auth/keycloak.ts:110`) inserts `{ idpId, email }` with **no `orgId`**, so a fresh login has no tenant and sees nothing. Org membership comes from the invitation flow, not from authenticating.
+- **The org itself is empty** — 0 assets, 0 scans, 0 reports (two scope sets created 2026-09-12 are the only activity). So the empty states above are correct behaviour, and this walkthrough could not exercise populated lists.
+- **Operational note for automated logins:** the vault prompt for this origin re-fills the most recently saved entry (identifier *and* password). Several attempts failed identically before that was noticed; the username had to be typed into the field directly.
+
+---
+
+## 10. Deployed 2026-09-12 — what was actually done
 
 The `/app` deployment was carried out and verified. This section is the record, so the next person can see exactly what changed and how to undo it.
 

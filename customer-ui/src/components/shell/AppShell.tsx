@@ -4,6 +4,7 @@ import { ContextBar } from "./ContextBar";
 import { Skeleton } from "./Skeleton";
 import { useStageRows } from "../../lib/hooks/useStageRows";
 import { useOrg } from "../../lib/api/queries";
+import { PRODUCT_NAME, PRODUCT_TAGLINE } from "../../lib/brand";
 
 /**
  * The chrome every in-app route shares. While the stage queries are in flight
@@ -23,8 +24,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       {loading ? (
         <aside className="hidden min-[900px]:block w-60 shrink-0 bg-[var(--surface)] border-r border-[var(--border)]">
           <div className="px-4 py-4 border-b border-[var(--hairline)]">
-            <div className="text-[14px] font-semibold">T3MP3ST</div>
-            <div className="text-[12px] text-[var(--ink-muted)] mt-0.5">Payment security portal</div>
+            <div className="text-[14px] font-semibold">{PRODUCT_NAME}</div>
+            <div className="text-[12px] text-[var(--ink-muted)] mt-0.5">{PRODUCT_TAGLINE}</div>
           </div>
           <div className="px-4 py-4">
             <Skeleton lines={6} />
