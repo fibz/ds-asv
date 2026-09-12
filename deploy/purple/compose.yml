@@ -99,6 +99,10 @@ services:
       DATABASE_URL: postgresql://asv_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD}@db:5432/asv_portal
       ADMIN_DATABASE_URL: postgresql://asv:${DB_ADMIN_PASSWORD:?set DB_ADMIN_PASSWORD}@db:5432/asv_portal
       MANIFEST_SECRET: ${MANIFEST_SECRET:?set MANIFEST_SECRET}
+      # Where to dispatch scan manifests. Without this the portal
+      # falls back to http://localhost:8000 inside its own container,
+      # so scans are accepted then never reach the scanner.
+      SCANNER_BASE_URL: http://scanner-api:8000
       KEYCLOAK_ISSUER: https://${PUBLIC_HOST:?set PUBLIC_HOST}/auth/realms/asv-portal
       KEYCLOAK_INTERNAL_ISSUER: http://keycloak:8080/auth/realms/asv-portal
       KEYCLOAK_CLIENT_ID: asv-portal

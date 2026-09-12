@@ -57,7 +57,10 @@ services:
       # and finds nothing real.
       GREENBONE_FEED_PATH: /data/greenbone_cves.json
       EVIDENCE_LOCAL_DIR: /data/evidence
-      PORTAL_BASE_URL: https://${PUBLIC_HOST:?set PUBLIC_HOST}
+      # Internal service DNS, NOT the public edge: the edge presents a
+      # self-signed certificate the scanner cannot verify, and this traffic
+      # never leaves the docker network. Override with PORTAL_INTERNAL_URL.
+      PORTAL_BASE_URL: ${PORTAL_INTERNAL_URL:-http://portal:3000}
       ASV_NAME: ASV Scanner Platform
     volumes:
       - /home/cchock/projects/ds-asv-portal/scanner-data:/data

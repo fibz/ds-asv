@@ -12,7 +12,10 @@ export type ScannerHealth =
 export async function getScannerHealth(): Promise<ScannerHealth> {
   const baseUrl = SCANNER_BASE_URL.replace(/\/$/, "");
   try {
-    const response = await fetch(`${baseUrl}/health`, {
+    // /v1/health, matching how dispatch reaches the scanner (/v1/manifests).
+    // This used to be /health, which the scanner does not serve — the check
+    // therefore reported "unreachable" against a perfectly healthy scanner.
+    const response = await fetch(`${baseUrl}/v1/health`, {
       cache: "no-store",
       signal: AbortSignal.timeout(3_000),
     });

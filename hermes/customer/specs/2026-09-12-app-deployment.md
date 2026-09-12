@@ -594,3 +594,69 @@ A real scan **through the public edge on purple**: customer scoped to the real t
 - **QSA token** (`API_QSA_TOKEN`) is unset, so the QSA role path is not exercisable on purple yet.
 - **Cache refresh on purple** is manual. Purple runs Greenbone itself, so the correct long-term move is to build the cache there via `scripts/refresh_greenbone_cache.sh` rather than shipping 236 MB from heaven.
 - The dashboard loads Google Fonts from the public internet; self-hosting is still an open item.
+
+---
+
+## 14. Portal ↔ scanner linked, and a real scan through the portal (2026-09-12)
+
+The two apps were deployed but not connected. Linking them needs **two legs**, because
+the portal dispatches scans and the scanner calls back with results.
+
+### The forward leg: portal → scanner
+
+- `SCANNER_BASE_URL: http://scanner-api:8000` added to the `portal` service in
+  `deploy/vps/compose.yml`. The portal's `environment:` is an **explicit list**, so putting
+  this in `.env` alone would never reach the container — adding it to the compose is what
+  actually links them. No new network was needed: the scanner already joins the portal's
+  default network as `external`, and the portal resolves `scanner-api` by name.
+- **Bug fixed:** the portal health-checked `${SCANNER_BASE_URL}/health`, but the scanner
+  serves **`/v1/health`** (dispatch correctly used `/v1/manifests`). The portal's own test
+  asserted the wrong path, so it stayed green while the integration could never pass.
+  `portal/src/lib/scan/health.ts` and its test now use `/v1/health`.
+
+### The backward leg: scanner → portal
+
+- The scanner writes status and findings back to `PORTAL_BASE_URL`, which was
+  `https://${PUBLIC_HOST}` — the public edge, whose certificate is self-signed:
+
+  ```
+  portal status update failed: [SSL: CERTIFICATE_VERIFY_FAILED]
+  certificate verify failed: self-signed certificate
+  ```
+
+- Fixed by pointing it at the **internal service DNS**:
+  `PORTAL_BASE_URL: ${PORTAL_INTERNAL_URL:-http://portal:3000}`. The traffic never leaves
+  the docker network, so there is no certificate to verify. Trusting the self-signed cert
+  inside the container was the alternative; internal DNS is simpler and matches the forward leg.
+
+### Two prod gates that apply (real gates, not bugs)
+
+1. **Verification.** `createScanFromAssets` refuses an unverified asset in prod
+   (`asset scanme.nmap.org is not verified (required in prod)`). Verification lasts 90 days;
+   the challenge lives 24h.
+2. **Approved scope.** The asset must be in an *approved* scope version.
+
+Worth knowing: **DNS TXT verification requires control of the domain** (`_asv-verify.<fqdn>`),
+so an asset you don't control can only be verified with `method: "manual"`, which returns the
+token to the caller. For `scanme.nmap.org` (not our domain) manual was the only path.
+
+### End-to-end proof, through the public edge, as the signed-in customer
+
+`scanme.nmap.org` added as an fqdn asset → scope version **v1 approved** → scan
+`Q3 2026 - scanme.nmap.org` → dispatched → **COMPLETED in ~40s with 31 findings: 4 critical,
+9 high, 15 medium, 3 low** (CVE-2026-60002, CVE-2023-38408, CVE-2016-1908, CVE-2008-3844) —
+identical to the heaven baseline. The UI reads Assets ✔ 1 of 1 verified · Scope ✔ v1 approved ·
+Scans ✔ 1 this quarter.
+
+### Gaps found while doing it
+
+- **No scan-detail route** in the customer UI (`/reports/:reportId` exists, `/scans/:id` does
+  not), so findings cannot yet be reviewed there.
+- **`/assets/new` and `/assets/import` are still placeholders** ("second pass") — assets have to
+  be created through the API for now.
+- **The scan target status stays `pending`** after the scan completes, while the scan itself is
+  `COMPLETED`; the target row is never advanced.
+- **Dispatch is synchronous**: the scanner runs the entire scan inside the
+  `POST /v1/manifests` request, so the portal's dispatch call blocks for the scan's duration
+  (~40s). Any client or proxy timeout shorter than the scan reports a failure for a scan that
+  actually ran — exactly what happened here at 5s before the run was confirmed complete.

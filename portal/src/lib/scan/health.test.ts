@@ -18,7 +18,7 @@ describe("getScannerHealth", () => {
       version: "1.0.0",
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8000/health",
+      "http://localhost:8000/v1/health",
       expect.objectContaining({ cache: "no-store" })
     );
   });
