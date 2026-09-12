@@ -42,7 +42,10 @@ Three questions this plan deliberately left open are now answered. Executors mus
 
 2. **`/api/auth/login` takes no return target.** `portal/src/app/api/auth/login/route.ts` reads no query params: it builds the authorize URL, sets the short-lived `asv_oauth_state` cookie, and redirects. `signInUrl()` must therefore be parameterless and return `"/api/auth/login"`; the app lands back on `/` after the callback. There is no `returnTo` to encode.
 
-3. **The reverse proxy on the production host is still unknown** and remains a human answer (Task 16 Step 1). No nginx, Caddy, Traefik or systemd unit for an edge exists in this repo.
+3. **The reverse proxy on the production host is still unknown** and remains a human answer (Task 16 Step 1). No nginx, Caddy, Traefik or systemd unit for an edge exists in this repo. (The infra inventory already lists `:8443` on purple as "owning service unknown"; the plan is to inspect the host at deploy time rather than have the human guess.)
+4. **Task 10's test contradicted Task 10's own screen.** It asserted that no element reads `0` for an empty organisation, while the screen it specifies renders `Stat value="0"`. A real zero is honest data, not a fabricated value — the assertion was removed and replaced with one that checks the empty-state action instead. Do not "fix" this by hiding real zeros.
+5. **Task 11's links had no routes.** Assets links to `/assets/new` and `/assets/import`, neither of which is in `routes.tsx`, so both would render an empty outlet. Both now route to `Placeholder`. Any new link added to a screen must have a declared route — an empty outlet is a defect, not a stub.
+6. **Task 12's "Submit for approval" action has no mutation layer.** `src/lib/api/client.ts` exposes only `apiGet`; there is no `apiPost`, no mutation hook, and no cache invalidation. The design (spec §5.3) promises the draft banner's primary action, so Task 12 must add `apiPost` and wire `submitScopeVersion` (`POST /api/v1/scope-versions/[versionId]/submit`) with an invalidating mutation — or the screen must state plainly that submission happens elsewhere. It must not render a button that does nothing.
 
 ## File Structure
 
