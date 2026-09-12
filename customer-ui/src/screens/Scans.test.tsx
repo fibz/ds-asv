@@ -7,7 +7,6 @@ vi.mock("../lib/api/queries", () => ({
   useScopeSets: vi.fn(),
   useAssets: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
   useReports: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
-  useApprovedScopeVersionId: vi.fn(() => null),
   useScanFindings: vi.fn(), useAudit: vi.fn(), useOrg: vi.fn(), keys: {},
 }));
 

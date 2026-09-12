@@ -8,7 +8,6 @@ vi.mock("../lib/api/queries", () => ({
   useScans: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
   useReports: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
   useScopeSets: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
-  useApprovedScopeVersionId: vi.fn(() => null),
   useScanFindings: vi.fn(), useAudit: vi.fn(), useOrg: vi.fn(), keys: {},
 }));
 

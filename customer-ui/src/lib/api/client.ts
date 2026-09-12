@@ -34,3 +34,26 @@ export async function apiGet<T = unknown>(path: string, signal?: AbortSignal): P
   }
   return (await res.json()) as T;
 }
+
+/**
+ * The one write primitive. Same prefix, same cookie, same sanitising as
+ * `apiGet`: a failed status becomes an `ApiError` carrying the SAFE_MESSAGES
+ * copy, never the server's raw text (which can leak internals).
+ *
+ * The body is serialised ONLY when one is given. A submit POST carries no
+ * body, and `JSON.stringify(undefined)` is the literal string "undefined" —
+ * a payload the route never asked for and would parse as garbage.
+ */
+export async function apiPost<T = unknown>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(`/api/v1${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    signal,
+  });
+  if (!res.ok) {
+    throw new ApiError(SAFE_MESSAGES[res.status] ?? "That request failed.", res.status);
+  }
+  return (await res.json()) as T;
+}

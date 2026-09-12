@@ -1,6 +1,6 @@
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { apiGet, ApiError } from "./client";
-import type { AssetApi, AuditEventApi, FindingApi, ReportApi, ScanApi, ScopeSetApi } from "./types";
+import { useMutation, useQuery, useQueryClient, type UseMutationResult, type UseQueryResult } from "@tanstack/react-query";
+import { apiGet, apiPost, ApiError } from "./client";
+import type { AssetApi, AuditEventApi, FindingApi, ReportApi, ScanApi, ScopeSetApi, ScopeVersionApi } from "./types";
 
 export const keys = {
   assets: ["assets"] as const,
@@ -35,16 +35,31 @@ export const useAudit = (): UseQueryResult<AuditEventApi[]> =>
   useQuery({ queryKey: keys.audit, queryFn: async () => (await apiGet<{ events: AuditEventApi[] }>("/audit")).events });
 
 /**
- * The one place the "approved scope version" is read. Home, Reports and
- * ReportDetail consume this so the gate cannot drift between screens.
- * Versions arrive nested inside /scope-sets, so this is a pure derivation over
- * that one response. Returns the newest approved version id, or null.
+ * Submit a draft scope version for approval.
+ *
+ * Contract — read from the portal route, NOT assumed
+ * (portal/src/app/api/v1/scope-versions/[versionId]/submit/route.ts):
+ *   POST /api/v1/scope-versions/{versionId}/submit
+ *   - no request body (the version id is the whole input; the route reads none)
+ *   - 200 { version } on success
+ *   - 401 Unauthorized (no session)
+ *   - 403 Forbidden — needs the `scope.manage` permission
+ *   - 404 { error: "Scope version not found" } when the version is not in this org
+ *   - 409 — ScopeGuardError: "only draft scope versions can be submitted"
+ *   - 500 for anything unexpected (routeErrorResponse, raw text never echoed)
+ *
+ * On success the scope list is refetched: /scope-sets is the only place scope
+ * versions are read from (there is no /scope-versions list GET), so
+ * invalidating that key is exactly what flips the draft to `submitted` on screen.
  */
-export function useApprovedScopeVersionId(): string | null {
-  const sets = useScopeSets();
-  const versions = (sets.data ?? []).flatMap((s) => s.versions ?? []);
-  const approved = versions.filter((v) => v.status === "approved").sort((a, b) => b.versionNumber - a.versionNumber);
-  return approved[0]?.id ?? null;
+export function useSubmitScopeVersion(): UseMutationResult<{ version: ScopeVersionApi }, ApiError, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (versionId: string) => apiPost<{ version: ScopeVersionApi }>(`/scope-versions/${versionId}/submit`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.scopeSets });
+    },
+  });
 }
 
 /** Shape of GET /api/v1/org (portal/src/lib/org/profile.ts → OrgProfile). */
