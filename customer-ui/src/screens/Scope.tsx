@@ -1,7 +1,8 @@
 // customer-ui/src/screens/Scope.tsx
 import { Link } from "react-router-dom";
 import { ApiError } from "../lib/api/client";
-import { useScopeSets, useSubmitScopeVersion } from "../lib/api/queries";
+import { useIssueAuthorization, useScopeSets, useSubmitScopeVersion } from "../lib/api/queries";
+import { authorizationFilename, saveJsonFile } from "../lib/download";
 import { scopeView } from "../lib/viewmodels/scope";
 import type { ScopeVersionApi } from "../lib/api/types";
 import { Badge } from "../components/primitives/Badge";
@@ -18,6 +19,7 @@ const itemCount = (v: ScopeVersionApi): number | null => v._count?.items ?? null
 export function Scope() {
   const scopeSets = useScopeSets();
   const submit = useSubmitScopeVersion();
+  const issue = useIssueAuthorization();
 
   const view = scopeView({ sets: scopeSets.data ?? [] });
   const { inForce, draft, history } = view;
@@ -29,6 +31,20 @@ export function Scope() {
   // The same rule for the read: a 403 on the scope list is a permission wall,
   // not a read failure with a retry that could never succeed.
   const readForbidden = scopeSets.error instanceof ApiError && scopeSets.error.status === 403;
+
+  // There is no GET for an authorisation — the only evidence this screen can
+  // have is the one it just issued — so the returned statement is pinned to the
+  // version it was issued for. A result for any other version is deliberately
+  // not shown, and a version that already has one is never offered a second.
+  const issueError = issue.error;
+  const issueForbidden = issueError instanceof ApiError && issueError.status === 403;
+  const issuedAuth = issue.isSuccess && issue.variables === inForce?.id ? issue.data?.authorization ?? null : null;
+  const inForceSet = (scopeSets.data ?? []).find((s) => s.id === inForce?.scopeSetId) ?? null;
+
+  const saveAuthorization = () => {
+    if (!issuedAuth || !inForce) return;
+    saveJsonFile(authorizationFilename(inForceSet?.name ?? "scope", inForce.versionNumber), issuedAuth);
+  };
 
   const heroCount = inForce ? itemCount(inForce) : null;
   const heroApproved = inForce ? day(inForce.approvedAt) : null;
@@ -104,6 +120,67 @@ export function Scope() {
                 >
                   View assets
                 </Link>
+              </div>
+
+              {/*
+                The signed authorisation for the version in force. There is no
+                GET for it, so the only evidence is the statement this screen
+                just issued: once it exists, the issue control is replaced by
+                that statement and a save action — never a silent second issue.
+              */}
+              <div className="mt-4 border-t border-[var(--hairline)] pt-4">
+                {issuedAuth ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] uppercase tracking-[0.07em] text-[var(--ink-subtle)]">
+                        Signed authorisation
+                      </span>
+                      <Badge tone="accent">Issued</Badge>
+                    </div>
+                    <p role="status" className="text-[13px] text-[var(--ink-muted)] mt-2">
+                      Issued for {view.labelFor(inForce)}. Keep it with your PCI records.
+                    </p>
+                    <dl className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
+                      <div>
+                        <dt className="text-[12px] text-[var(--ink-muted)]">Issued on</dt>
+                        <dd className="text-[14px] mt-0.5">{day(issuedAuth.issuedAt)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-[12px] text-[var(--ink-muted)]">Scope fingerprint</dt>
+                        <dd className="text-[14px] mt-0.5 font-mono">{shortHash(issuedAuth.scopeVersionHash)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-[12px] text-[var(--ink-muted)]">Statement hash</dt>
+                        <dd className="text-[14px] mt-0.5 font-mono">{shortHash(issuedAuth.statementHash)}</dd>
+                      </div>
+                    </dl>
+                    <p className="text-[12px] text-[var(--ink-subtle)] mt-3">Signature</p>
+                    <p className="text-[13px] font-mono break-all">{issuedAuth.signature}</p>
+                    <div className="mt-3">
+                      <Button variant="secondary" onClick={saveAuthorization}>
+                        Save authorisation
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Button onClick={() => issue.mutate(inForce.id)} disabled={issue.isPending}>
+                      {issue.isPending ? "Issuing…" : "Issue authorisation"}
+                    </Button>
+                    {/* A 403 is a permission wall: the role lacks
+                        authorization.issue, and retrying changes nothing. */}
+                    {issueForbidden ? (
+                      <div className="mt-3">
+                        <PermissionState permission="authorization.issue" />
+                      </div>
+                    ) : null}
+                    {issueError && !issueForbidden ? (
+                      <p role="alert" className="mt-3 text-[13px] text-[var(--fail)]">
+                        {issueError.message}
+                      </p>
+                    ) : null}
+                  </>
+                )}
               </div>
             </section>
           ) : (

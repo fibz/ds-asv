@@ -39,3 +39,19 @@ export interface ScopeVersionApi {
 export interface ScopeSetApi { id: string; name: string; description: string | null; createdAt: string; versions?: ScopeVersionApi[] }
 
 export interface AuditEventApi { id: string; action: string; entity: string; entityId: string | null; createdAt: string }
+
+/** Field names copied from portal/prisma/schema.prisma → model Dispute. */
+export interface DisputeApi {
+  id: string; findingId: string; organizationId: string; status: string;
+  justification: string; resolutionNote: string | null;
+  raisedById: string; raisedAt: string;
+  moderatedById: string | null; moderatedAt: string | null;
+  createdAt: string; updatedAt: string;
+}
+
+/** Field names copied from portal/prisma/schema.prisma → model Authorization. */
+export interface AuthorizationApi {
+  id: string; organizationId: string; scopeVersionId: string;
+  statementHash: string; scopeVersionHash: string; signature: string;
+  status: string; issuedById: string | null; issuedAt: string; createdAt: string;
+}

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type UseMutationResult, type UseQueryResult } from "@tanstack/react-query";
 import { apiGet, apiPost, ApiError } from "./client";
-import type { AssetApi, AuditEventApi, FindingApi, ReportApi, ScanApi, ScopeSetApi, ScopeVersionApi } from "./types";
+import type { AssetApi, AuditEventApi, AuthorizationApi, DisputeApi, FindingApi, ReportApi, ScanApi, ScopeSetApi, ScopeVersionApi } from "./types";
 
 export const keys = {
   assets: ["assets"] as const,
@@ -56,6 +56,76 @@ export function useSubmitScopeVersion(): UseMutationResult<{ version: ScopeVersi
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (versionId: string) => apiPost<{ version: ScopeVersionApi }>(`/scope-versions/${versionId}/submit`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.scopeSets });
+    },
+  });
+}
+
+/**
+ * Raise a dispute against a finding.
+ *
+ * Contract — read from the portal route, NOT assumed
+ * (portal/src/app/api/v1/findings/[findingId]/disputes/route.ts):
+ *   POST /api/v1/findings/{findingId}/disputes
+ *   - request body reads exactly one field: { justification: string }
+ *     (required; the route 400s on a missing/blank/whitespace-only value and on
+ *     anything longer than 2000 chars — it does NOT trim, the service does)
+ *   - 201 { dispute } on success
+ *   - 401 Unauthorized (no session)
+ *   - 403 Forbidden — needs the `finding.dispute` permission
+ *     (organization_owner | security_admin | asset_manager | scan_operator | report_viewer)
+ *   - 400 for a malformed/oversized justification
+ *   - 404 { error: "Finding not found" } when the finding is not in this org
+ *   - 409 DisputeGuardError (service-level justification guard)
+ *   - 500 for anything unexpected (routeErrorResponse, raw text never echoed)
+ *
+ * The route itself does not police the finding's status, so status is the UI's
+ * rule: a dispute is only offered while the finding is `open`.
+ *
+ * On success the findings for the scan are refetched — that is the only read
+ * that carries findings, so invalidating it is what makes the new dispute
+ * visible on the report.
+ */
+export function useRaiseDispute(
+  scanId: string | null
+): UseMutationResult<{ dispute: DisputeApi }, ApiError, { findingId: string; justification: string }> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ findingId, justification }) => apiPost<{ dispute: DisputeApi }>(`/findings/${findingId}/disputes`, { justification }),
+    onSuccess: () => {
+      if (scanId) void queryClient.invalidateQueries({ queryKey: keys.findings(scanId) });
+    },
+  });
+}
+
+/**
+ * Issue the signed scope authorisation for an approved scope version.
+ *
+ * Contract — read from the portal route, NOT assumed
+ * (portal/src/app/api/v1/scope-versions/[versionId]/authorization/route.ts):
+ *   POST /api/v1/scope-versions/{versionId}/authorization
+ *   - no request body (the version id is the whole input; the route reads none)
+ *   - 201 { authorization } on success — statementHash, scopeVersionHash and an
+ *     HMAC signature, plus the version it was issued against
+ *   - 401 Unauthorized (no session)
+ *   - 403 Forbidden — needs the `authorization.issue` permission
+ *     (organization_owner | security_admin)
+ *   - 409 ScopeGuardError ("Scope version not found" / "authorization requires
+ *     an approved scope version")
+ *   - 500 for anything unexpected (routeErrorResponse, raw text never echoed)
+ *
+ * There is no GET for an authorisation — the only way to see one is to issue
+ * it — so this is a mutation, and the screen keeps the returned statement.
+ * The route upserts the (unique) authorisation row for the version, so the
+ * scope-set read is marked stale on success; note that /scope-sets does not
+ * carry authorisation fields today, so the screen's "already issued" evidence
+ * comes from this mutation's result rather than from a refetch.
+ */
+export function useIssueAuthorization(): UseMutationResult<{ authorization: AuthorizationApi }, ApiError, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (versionId: string) => apiPost<{ authorization: AuthorizationApi }>(`/scope-versions/${versionId}/authorization`),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: keys.scopeSets });
     },

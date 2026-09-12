@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
@@ -6,13 +6,14 @@ import userEvent from "@testing-library/user-event";
 vi.mock("../lib/api/queries", () => ({
   useScopeSets: vi.fn(),
   useSubmitScopeVersion: vi.fn(() => ({ mutate: vi.fn(), isPending: false, error: null })),
+  useIssueAuthorization: vi.fn(() => ({ mutate: vi.fn(), isPending: false, error: null, isSuccess: false })),
   useAssets: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
   useScans: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
   useReports: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
   useScanFindings: vi.fn(), useAudit: vi.fn(), useOrg: vi.fn(), keys: {},
 }));
 
-import { useScopeSets, useSubmitScopeVersion } from "../lib/api/queries";
+import { useScopeSets, useSubmitScopeVersion, useIssueAuthorization } from "../lib/api/queries";
 import { ApiError } from "../lib/api/client";
 import { Scope } from "./Scope";
 
@@ -26,10 +27,23 @@ const mockSets = (sets: unknown[]) =>
   vi.mocked(useScopeSets).mockReturnValue({ data: sets, isLoading: false, error: null, refetch: vi.fn() } as never);
 const mockSubmit = (over: object) =>
   vi.mocked(useSubmitScopeVersion).mockReturnValue({ mutate: vi.fn(), isPending: false, error: null, ...over } as never);
+const mockIssue = (over: object) =>
+  vi.mocked(useIssueAuthorization).mockReturnValue({ mutate: vi.fn(), isPending: false, error: null, isSuccess: false, variables: undefined, data: undefined, ...over } as never);
+
+const authorisation = {
+  id: "auth1", organizationId: "org1", scopeVersionId: "v4",
+  statementHash: "aa11bb22cc33dd44", scopeVersionHash: "ee55ff66aa77bb88",
+  signature: "9f2ca41d2e5b0000deadbeef0000cafe0000123456789abcdef00ff00ff00ff00",
+  status: "issued", issuedById: "u1", issuedAt: "2026-09-12T00:00:00Z", createdAt: "2026-09-12T00:00:00Z",
+};
 
 const renderScope = () => render(<MemoryRouter><Scope /></MemoryRouter>);
 
 describe("Scope", () => {
+  // The issue hook's return value persists between tests once mockReturnValue
+  // has been called; reset it so each test states its own state explicitly.
+  beforeEach(() => { mockIssue({}); });
+
   it("says so plainly when nothing is approved, and does not claim coverage", () => {
     mockSets([]);
     renderScope();
@@ -122,5 +136,62 @@ describe("Scope", () => {
     renderScope();
     expect(screen.getByText("scope.view")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("offers the issue control on the approved version and posts that version's id", async () => {
+    mockSets([set([version()])]);
+    const mutate = vi.fn();
+    mockIssue({ mutate });
+    renderScope();
+
+    await userEvent.click(screen.getByRole("button", { name: /Issue authorisation/i }));
+    expect(mutate).toHaveBeenCalledWith("v4");
+  });
+
+  it("disables the control and shows a pending label while issuing", () => {
+    mockSets([set([version()])]);
+    mockIssue({ isPending: true });
+    renderScope();
+    expect(screen.getByRole("button", { name: /Issuing/i })).toBeDisabled();
+  });
+
+  it("shows the signed statement readably with a save action once issued", () => {
+    mockSets([set([version()])]);
+    mockIssue({ isSuccess: true, variables: "v4", data: { authorization: authorisation } });
+    renderScope();
+
+    expect(screen.getByText("Issued")).toBeInTheDocument();
+    expect(screen.getByText("2026-09-12")).toBeInTheDocument();
+    expect(screen.getByText(authorisation.signature)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Save authorisation/i })).toBeInTheDocument();
+    // It does not offer to issue a second authorisation for the same version.
+    expect(screen.queryByRole("button", { name: /Issue authorisation/i })).toBeNull();
+  });
+
+  it("does not present one version's authorisation as another's", () => {
+    mockSets([set([version({ id: "v5", versionNumber: 5, status: "approved" }), version()])]);
+    mockIssue({ isSuccess: true, variables: "v4", data: { authorization: authorisation } });
+    renderScope();
+
+    expect(screen.queryByText(authorisation.signature)).toBeNull();
+    expect(screen.getByRole("button", { name: /Issue authorisation/i })).toBeInTheDocument();
+  });
+
+  it("explains a 403 as a missing authorization.issue permission, not a generic failure", () => {
+    mockSets([set([version()])]);
+    mockIssue({ error: new ApiError("Your role does not allow this action. Ask an organisation owner if you need access.", 403) });
+    renderScope();
+
+    expect(screen.getByText("authorization.issue")).toBeInTheDocument();
+    expect(screen.queryByText(/Your role does not allow/)).toBeNull();
+  });
+
+  it("surfaces a non-403 issue error near the action without breaking the screen", () => {
+    mockSets([set([version()])]);
+    mockIssue({ error: new ApiError("That conflicts with something that already exists.", 409) });
+    renderScope();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/conflicts/i);
+    expect(screen.getByRole("button", { name: /Issue authorisation/i })).toBeInTheDocument();
   });
 });

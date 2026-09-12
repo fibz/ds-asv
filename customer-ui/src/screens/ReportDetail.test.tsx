@@ -8,13 +8,14 @@ vi.mock("../lib/api/queries", () => ({
   useScans: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
   useScopeSets: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
   useScanFindings: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
+  useRaiseDispute: vi.fn(() => ({ mutate: vi.fn(), isPending: false, error: null, isSuccess: false })),
   useAssets: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
   useAudit: vi.fn(),
   useOrg: vi.fn(),
   keys: {},
 }));
 
-import { useReports, useScanFindings, useScans, useScopeSets } from "../lib/api/queries";
+import { useRaiseDispute, useReports, useScanFindings, useScans, useScopeSets } from "../lib/api/queries";
 import { ApiError } from "../lib/api/client";
 import { ReportDetail } from "./ReportDetail";
 
@@ -58,15 +59,15 @@ describe("ReportDetail", () => {
     expect(screen.getByText("Finalisation gate")).toBeInTheDocument();
   });
 
-  it("offers no dispute control — the write layer is not built yet", () => {
+  it("offers no dispute control on a finding that is no longer open", () => {
     vi.mocked(useReports).mockReturnValue({ data: [report], isLoading: false, error: null, refetch: vi.fn() } as never);
     vi.mocked(useScans).mockReturnValue({ data: [scan], isLoading: false, error: null, refetch: vi.fn() } as never);
     vi.mocked(useScopeSets).mockReturnValue(sets as never);
-    vi.mocked(useScanFindings).mockReturnValue({ data: [finding()], isLoading: false, error: null, refetch: vi.fn() } as never);
+    vi.mocked(useScanFindings).mockReturnValue({ data: [finding({ status: "mitigated" })], isLoading: false, error: null, refetch: vi.fn() } as never);
+    vi.mocked(useRaiseDispute).mockReturnValue({ mutate: vi.fn(), isPending: false, error: null, isSuccess: false } as never);
     renderDetail();
 
-    expect(screen.queryByRole("button", { name: /dispute/i })).toBeNull();
-    expect(screen.queryByRole("link", { name: /dispute/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /raise dispute/i })).toBeNull();
   });
 
   it("skips the findings query when the scan id is unknown, and says the report is missing", () => {
@@ -101,5 +102,102 @@ describe("ReportDetail", () => {
     renderDetail();
     expect(screen.getByText("report.view")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("ReportDetail — raising a dispute", () => {
+  const mockDispute = (over: object = {}) => {
+    const base = { mutate: vi.fn(), isPending: false, error: null, isSuccess: false, variables: undefined };
+    vi.mocked(useRaiseDispute).mockReturnValue({ ...base, ...over } as never);
+    return base;
+  };
+
+  const renderWith = (findings: unknown[]) => {
+    vi.mocked(useReports).mockReturnValue({ data: [report], isLoading: false, error: null, refetch: vi.fn() } as never);
+    vi.mocked(useScans).mockReturnValue({ data: [scan], isLoading: false, error: null, refetch: vi.fn() } as never);
+    vi.mocked(useScopeSets).mockReturnValue(sets as never);
+    vi.mocked(useScanFindings).mockReturnValue({ data: findings, isLoading: false, error: null, refetch: vi.fn() } as never);
+    renderDetail();
+  };
+
+  const openForm = async () => {
+    await userEvent.click(screen.getByRole("button", { name: /^Raise dispute$/i }));
+  };
+
+  it("offers the control once per finding, and only while the finding is open", () => {
+    mockDispute();
+    renderWith([
+      finding(),
+      finding({ id: "f2", title: "tls weak", severity: "low" }),
+      finding({ id: "f3", title: "already mitigated", severity: "low", status: "mitigated" }),
+    ]);
+    expect(screen.getAllByRole("button", { name: /^Raise dispute$/i })).toHaveLength(2);
+  });
+
+  it("refuses an empty justification — it does not call the mutation and says why", async () => {
+    const { mutate } = mockDispute();
+    renderWith([finding()]);
+    await openForm();
+
+    await userEvent.click(screen.getByRole("button", { name: /Submit dispute/i }));
+
+    expect(mutate).not.toHaveBeenCalled();
+    expect(screen.getByText(/justification is required/i)).toBeInTheDocument();
+  });
+
+  it("submits the justification under the field name the route reads", async () => {
+    const { mutate } = mockDispute();
+    renderWith([finding()]);
+    await openForm();
+
+    await userEvent.type(screen.getByLabelText(/justification/i), "Not reachable from the internet");
+    await userEvent.click(screen.getByRole("button", { name: /Submit dispute/i }));
+
+    expect(mutate).toHaveBeenCalledWith({ findingId: "f1", justification: "Not reachable from the internet" });
+  });
+
+  it("disables the control and shows a pending label while the dispute is in flight", async () => {
+    mockDispute({ isPending: true });
+    renderWith([finding()]);
+    await openForm();
+
+    expect(screen.getByRole("button", { name: /Submitting/i })).toBeDisabled();
+  });
+
+  it("gives the textarea a real label and associates the error with it", async () => {
+    mockDispute({ error: new ApiError("That conflicts with something that already exists.", 409) });
+    renderWith([finding()]);
+    await openForm();
+
+    const textarea = screen.getByLabelText(/justification/i);
+    const alert = screen.getByRole("alert");
+    expect(alert.id).not.toBe("");
+    expect((textarea.getAttribute("aria-describedby") ?? "").split(" ")).toContain(alert.id);
+  });
+
+  it("confirms on the finding and closes the form once the dispute is raised", async () => {
+    mockDispute({ isSuccess: true, variables: { findingId: "f1", justification: "x" } });
+    renderWith([finding()]);
+
+    expect(screen.getByText(/Dispute raised/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Raise dispute$/i })).toBeNull();
+  });
+
+  it("explains a 403 as a missing finding.dispute permission, not a generic failure", async () => {
+    mockDispute({ error: new ApiError("Your role does not allow this action. Ask an organisation owner if you need access.", 403) });
+    renderWith([finding()]);
+    await openForm();
+
+    expect(screen.getByText("finding.dispute")).toBeInTheDocument();
+    expect(screen.queryByText(/Your role does not allow/)).toBeNull();
+  });
+
+  it("shows a sanitised api error next to the form for anything other than 403", async () => {
+    mockDispute({ error: new ApiError("That conflicts with something that already exists.", 409) });
+    renderWith([finding()]);
+    await openForm();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/conflicts/i);
+    expect(screen.getByRole("button", { name: /Submit dispute/i })).toBeInTheDocument();
   });
 });
