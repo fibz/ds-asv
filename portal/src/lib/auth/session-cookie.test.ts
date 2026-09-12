@@ -1,9 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   authorizeUrl,
   clearSessionCookieHeader,
+  exchangeCode,
   hashSessionToken,
   parseCookies,
+  publicOrigin,
   sessionCookieHeader,
   sessionTokenFromRequest,
 } from "@/lib/auth/session-cookie";
@@ -57,5 +59,76 @@ describe("session cookie helpers", () => {
     expect(set).toContain("SameSite=lax");
     expect(clearSessionCookieHeader()).toContain("asv_session=");
     expect(clearSessionCookieHeader()).toContain("Max-Age=0");
+  });
+});
+
+// These two blocks exist because production broke without them: behind the
+// reverse proxy Next derived an INTERNAL origin, so the realm rejected the
+// redirect_uri and Node was asked to trust the proxy's self-signed cert.
+describe("publicOrigin (the reverse-proxy origin)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("prefers PUBLIC_ORIGIN over the origin Next derives from the request", () => {
+    vi.stubEnv("PUBLIC_ORIGIN", "https://74.156.0.13:8443");
+    expect(publicOrigin("https://0.0.0.0:3000")).toBe("https://74.156.0.13:8443");
+  });
+
+  it("strips trailing slashes so the redirect_uri cannot double up", () => {
+    vi.stubEnv("PUBLIC_ORIGIN", "https://example.test/");
+    expect(publicOrigin("https://0.0.0.0:3000")).toBe("https://example.test");
+  });
+
+  it("falls back to the request origin in dev (unset or empty)", () => {
+    vi.stubEnv("PUBLIC_ORIGIN", "");
+    expect(publicOrigin("http://localhost:3000")).toBe("http://localhost:3000");
+    vi.unstubAllEnvs();
+    delete process.env.PUBLIC_ORIGIN;
+    expect(publicOrigin("http://localhost:3000")).toBe("http://localhost:3000");
+  });
+});
+
+describe("exchangeCode talks to the internal issuer", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  function stubFetch() {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ access_token: "at" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("posts the code exchange to KEYCLOAK_INTERNAL_ISSUER, not the public URL", async () => {
+    vi.stubEnv("KEYCLOAK_ISSUER", "https://74.156.0.13:8443/auth/realms/asv-portal");
+    vi.stubEnv("KEYCLOAK_INTERNAL_ISSUER", "http://keycloak:8080/auth/realms/asv-portal");
+    vi.stubEnv("KEYCLOAK_CLIENT_ID", "asv-portal");
+    vi.stubEnv("KEYCLOAK_CLIENT_SECRET", "dev-secret");
+    const fetchMock = stubFetch();
+
+    await exchangeCode("code-1", "https://74.156.0.13:8443/api/auth/callback");
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://keycloak:8080/auth/realms/asv-portal/protocol/openid-connect/token"
+    );
+  });
+
+  it("falls back to the public issuer when no internal one is configured", async () => {
+    vi.stubEnv("KEYCLOAK_ISSUER", "https://74.156.0.13:8443/auth/realms/asv-portal");
+    vi.stubEnv("KEYCLOAK_INTERNAL_ISSUER", "");
+    vi.stubEnv("KEYCLOAK_CLIENT_ID", "asv-portal");
+    vi.stubEnv("KEYCLOAK_CLIENT_SECRET", "dev-secret");
+    const fetchMock = stubFetch();
+
+    await exchangeCode("code-2", "https://74.156.0.13:8443/api/auth/callback");
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "https://74.156.0.13:8443/auth/realms/asv-portal/protocol/openid-connect/token"
+    );
   });
 });

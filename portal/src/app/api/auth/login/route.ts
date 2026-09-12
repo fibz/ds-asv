@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   authorizeUrl,
   newOAuthState,
+  publicOrigin,
   RETURN_TO_COOKIE,
   STATE_COOKIE,
   safeReturnTo,
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
       { status: 503 }
     );
   }
-  const origin = request.nextUrl.origin;
+  const origin = publicOrigin(request.nextUrl.origin);
   const redirectUri = `${origin}/api/auth/callback`;
   const state = newOAuthState();
   const url = authorizeUrl(state, { redirectUri });

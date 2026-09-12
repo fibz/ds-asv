@@ -15,6 +15,17 @@ function issuer(): string {
   return raw.replace(/\/+$/, "");
 }
 
+/**
+ * Internal Keycloak base URL for the server-side code exchange. In production
+ * the public issuer terminates TLS with a self-signed certificate at the proxy,
+ * so exchanging the code over the Docker network avoids making Node trust that
+ * browser-facing certificate. The browser is still SENT to the public issuer.
+ */
+function internalIssuer(): string {
+  const internal = process.env.KEYCLOAK_INTERNAL_ISSUER;
+  return (internal || issuer()).replace(/\/+$/, "");
+}
+
 function clientId(): string {
   const raw = process.env.KEYCLOAK_CLIENT_ID;
   if (!raw) throw new Error("KEYCLOAK_CLIENT_ID is not set; OIDC login is unavailable");
@@ -46,6 +57,21 @@ export function sessionTokenFromRequest(request: RequestLike): string | null {
   if (m) return m[1];
   const cookies = parseCookies(request.headers.get("cookie"));
   return cookies[SESSION_COOKIE] ?? null;
+}
+
+/**
+ * Public browser origin for OAuth redirects.
+ *
+ * Behind the reverse proxy Next can otherwise derive an INTERNAL origin such as
+ * https://0.0.0.0:3000, which the realm rejects as an unregistered redirect_uri
+ * (`Invalid parameter: redirect_uri`). PUBLIC_ORIGIN is the address the browser
+ * actually used. Note `$host` at the proxy strips the port, so the request
+ * origin is not always recoverable from headers.
+ */
+export function publicOrigin(requestOrigin: string): string {
+  // `||` rather than `??` on purpose: a set-but-EMPTY PUBLIC_ORIGIN would
+  // otherwise yield "" and produce a relative redirect_uri. Empty falls back.
+  return (process.env.PUBLIC_ORIGIN || requestOrigin).replace(/\/+$/, "");
 }
 
 /** sha256 of a raw session token — the Session-registry key. */
@@ -92,7 +118,7 @@ export interface TokenResponse {
 export async function exchangeCode(code: string, redirectUri: string): Promise<TokenResponse> {
   const secret = process.env.KEYCLOAK_CLIENT_SECRET;
   if (!secret) throw new Error("KEYCLOAK_CLIENT_SECRET is not set; OIDC login is unavailable");
-  const res = await fetch(`${issuer()}/protocol/openid-connect/token`, {
+  const res = await fetch(`${internalIssuer()}/protocol/openid-connect/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({

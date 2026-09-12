@@ -74,6 +74,17 @@ describe("auth login route", () => {
     expect(res.cookies.get("asv_return_to")).toBeUndefined();
   });
 
+  it("builds the redirect_uri from PUBLIC_ORIGIN, not the request origin", async () => {
+    // Behind the proxy Next derives e.g. https://0.0.0.0:3000, which the realm
+    // rejects as an unregistered redirect_uri.
+    vi.stubEnv("PUBLIC_ORIGIN", "https://public.example:8443");
+    const res = await loginGET(req("/api/auth/login"));
+    const loc = res.headers.get("location") ?? "";
+    expect(new URL(loc).searchParams.get("redirect_uri")).toBe(
+      "https://public.example:8443/api/auth/callback"
+    );
+  });
+
   it("provides a dev-only one-click customer login", async () => {
     vi.mocked(jwtVerify).mockResolvedValueOnce({ payload: CLAIMS, protectedHeader: {} } as never);
     vi.mocked(prisma.user.create).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email } as never);
@@ -192,5 +203,19 @@ describe("auth callback route", () => {
       req("/api/auth/callback?code=c&state=st", "asv_oauth_state=st; asv_return_to=%2F%2Fevil.example")
     );
     expect(res.headers.get("location")).toBe("http://localhost/dashboard");
+  });
+
+  it("redirects to PUBLIC_ORIGIN, not the internal request origin", async () => {
+    vi.stubEnv("PUBLIC_ORIGIN", "https://public.example:8443");
+    vi.mocked(jwtVerify).mockResolvedValueOnce({ payload: CLAIMS, protectedHeader: {} } as never);
+    vi.mocked(prisma.user.create).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ id: "u1", idpId: CLAIMS.sub, email: CLAIMS.email } as never);
+    vi.mocked(prisma.session.findFirst).mockResolvedValue(null as never);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ access_token: "at-4" }), { status: 200, headers: { "Content-Type": "application/json" } })
+    ));
+
+    const res = await callbackGET(req("/api/auth/callback?code=c&state=st", "asv_oauth_state=st"));
+    expect(res.headers.get("location")).toBe("https://public.example:8443/dashboard");
   });
 });
