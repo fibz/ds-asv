@@ -1,5 +1,5 @@
 import { useAssets, useApprovedScopeVersionId, useReports, useScans, useScopeSets } from "../api/queries";
-import { reportGate } from "../viewmodels/gate";
+import { finalReportIdsOf } from "../viewmodels/gate";
 import { quarterInfo, type QuarterInfo } from "../viewmodels/tasks";
 import { stageRows, type StageRow } from "../viewmodels/stages";
 
@@ -20,18 +20,7 @@ export function useStageRows(): { rows: StageRow[]; quarter: QuarterInfo; loadin
     .sort((a, b) => b.versionNumber - a.versionNumber)[0] ?? null;
   const hasDraftScope = versions.some((v) => v.status === "draft" || v.status === "submitted");
 
-  const finalReportIds = (reports.data ?? [])
-    .filter((r) =>
-      reportGate({
-        status: r.status,
-        scopeVersionId: r.scopeVersionId,
-        approvedScopeVersionId,
-        attestationStatus: r.attestation?.status ?? null,
-        scopeLabel: null,
-        attestedAt: r.attestation?.reviewedAt ?? null,
-      }).isFinal
-    )
-    .map((r) => r.id);
+  const finalReportIds = finalReportIdsOf(reports.data ?? [], approvedScopeVersionId);
 
   const rows = stageRows({
     assets: assets.data ?? [], approved, hasDraftScope,

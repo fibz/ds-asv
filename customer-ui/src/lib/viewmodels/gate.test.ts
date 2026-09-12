@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reportGate } from "./gate";
+import { reportGate, finalReportIdsOf } from "./gate";
 
 const base = {
   status: "attested", scopeVersionId: "v4", approvedScopeVersionId: "v4",
@@ -34,5 +34,17 @@ describe("reportGate", () => {
   it("states the gate position in one sentence, with evidence", () => {
     expect(reportGate(base).sentence).toContain("Attested");
     expect(reportGate(base).conditions[1].evidence).toBe("v4");
+  });
+});
+
+describe("finalReportIdsOf", () => {
+  it("returns only reports whose gate passes", () => {
+    const rows = [
+      { id: "r1", status: "attested", scopeVersionId: "v4", attestation: { status: "attested", reviewedAt: "2026-09-03" } },
+      { id: "r2", status: "submitted", scopeVersionId: "v4", attestation: { status: "submitted", reviewedAt: null } },
+      { id: "r3", status: "attested", scopeVersionId: "v3", attestation: { status: "attested", reviewedAt: "2026-06-01" } },
+    ];
+    expect(finalReportIdsOf(rows, "v4")).toEqual(["r1"]);
+    expect(finalReportIdsOf(rows, null)).toEqual([]);
   });
 });

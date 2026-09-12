@@ -71,3 +71,27 @@ export function reportGate(input: GateInput): GateView {
 
   return { isFinal, conditions, sentence, blockReason, canDownload: isFinal };
 }
+
+/**
+ * The single place the set of final report ids is derived. Home, the sidebar
+ * (useStageRows) and Reports all need "which reports are final" — deriving it
+ * more than once would let the screens drift apart. Pure, so it is testable
+ * without a render.
+ */
+export function finalReportIdsOf(
+  reports: { id: string; status: string; scopeVersionId: string | null; attestation: { status: string; reviewedAt: string | null } | null }[],
+  approvedScopeVersionId: string | null
+): string[] {
+  return reports
+    .filter((r) =>
+      reportGate({
+        status: r.status,
+        scopeVersionId: r.scopeVersionId,
+        approvedScopeVersionId,
+        attestationStatus: r.attestation?.status ?? null,
+        scopeLabel: null,
+        attestedAt: r.attestation?.reviewedAt ?? null,
+      }).isFinal
+    )
+    .map((r) => r.id);
+}
