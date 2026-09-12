@@ -1,0 +1,38 @@
+import { describe, it, expect } from "vitest";
+import { reportGate } from "./gate";
+
+const base = {
+  status: "attested", scopeVersionId: "v4", approvedScopeVersionId: "v4",
+  attestationStatus: "attested", scopeLabel: "v4", attestedAt: "2026-09-03",
+};
+
+describe("reportGate", () => {
+  it("is final only when attested AND backed by the approved scope version", () => {
+    expect(reportGate(base).isFinal).toBe(true);
+    expect(reportGate({ ...base, approvedScopeVersionId: "v5" }).isFinal).toBe(false);
+    expect(reportGate({ ...base, status: "submitted" }).isFinal).toBe(false);
+    expect(reportGate({ ...base, scopeVersionId: null, approvedScopeVersionId: null }).isFinal).toBe(false);
+  });
+
+  it("names the missing condition rather than just saying not final", () => {
+    const g = reportGate({ ...base, status: "submitted", attestationStatus: "submitted" });
+    expect(g.blockReason).toBe("Attestation pending");
+    expect(g.conditions.find((c) => c.key === "attestation")!.met).toBe(false);
+    expect(g.conditions.find((c) => c.key === "scope")!.met).toBe(true);
+  });
+
+  it("explains a missing approved scope in its own words", () => {
+    const g = reportGate({ ...base, scopeVersionId: null, approvedScopeVersionId: null });
+    expect(g.blockReason).toBe("No approved scope version backs this report");
+  });
+
+  it("allows download only when final", () => {
+    expect(reportGate(base).canDownload).toBe(true);
+    expect(reportGate({ ...base, status: "draft" }).canDownload).toBe(false);
+  });
+
+  it("states the gate position in one sentence, with evidence", () => {
+    expect(reportGate(base).sentence).toContain("Attested");
+    expect(reportGate(base).conditions[1].evidence).toBe("v4");
+  });
+});
