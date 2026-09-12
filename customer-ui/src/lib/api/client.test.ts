@@ -37,7 +37,7 @@ describe("apiGet", () => {
 
   it("never leaks raw server text as the message", async () => {
     stubFetch({ ok: false, status: 500, json: async () => ({ error: "prisma.asset.findMany() failed" }) });
-    const err = await apiGet("/assets").catch((e) => e as ApiError);
+    const err = (await apiGet("/assets").catch((e: unknown) => e)) as ApiError;
     expect(err.message).not.toContain("prisma");
     expect(err.status).toBe(500);
   });
