@@ -11,7 +11,13 @@ describe("SignInLanding", () => {
     renderAt("/sign-in");
     const links = screen.getAllByRole("link");
     expect(links).toHaveLength(1);
-    expect(links[0]).toHaveAttribute("href", "/api/auth/login");
+    // The login URL must carry a returnTo so the portal sends the user back to
+    // this app instead of its own UI. The value follows BASE_URL, which is "/"
+    // under vitest and "/app/" in the built app — so assert the shape, and that
+    // it is a rooted local path (the portal rejects anything else).
+    const href = links[0].getAttribute("href") ?? "";
+    expect(href.startsWith("/api/auth/login?returnTo=")).toBe(true);
+    expect(decodeURIComponent(href.split("returnTo=")[1] ?? "").startsWith("/")).toBe(true);
   });
 
   it("has no password field", () => {

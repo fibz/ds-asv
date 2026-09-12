@@ -7,6 +7,7 @@ import { createHash, randomBytes } from "node:crypto";
 // header) reuses the existing verifyToken → provision → Session-registry path.
 export const SESSION_COOKIE = "asv_session";
 export const STATE_COOKIE = "asv_oauth_state";
+export const RETURN_TO_COOKIE = "asv_return_to";
 
 function issuer(): string {
   const raw = process.env.KEYCLOAK_ISSUER;
@@ -156,4 +157,45 @@ export function clearSessionCookieHeader(opts: CookieOptions = {}): string {
 /** set-cookie header that clears the OAuth state cookie (post-callback). */
 export function clearStateCookieHeader(opts: CookieOptions = {}): string {
   return cookieHeader(STATE_COOKIE, "", { ...sessionCookieOptions(opts), maxAge: 0 });
+}
+
+/**
+ * A safe post-login destination: a LOCAL rooted path only.
+ *
+ * `returnTo` travels through the OAuth round trip (query parameter, then
+ * cookie) and is therefore caller-supplied. Anything with a scheme, a host, a
+ * protocol-relative prefix, a control character (header injection) or a
+ * backslash is rejected and the caller falls back to the portal's own landing
+ * page. Without this the login endpoint is an open redirect.
+ */
+export function safeReturnTo(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (!value.startsWith("/")) return null; // must be rooted on this origin
+  if (value.startsWith("//")) return null; // protocol-relative => off-site
+  if (/[\u0000-\u0020\u007f]/.test(value)) return null; // control chars / spaces
+  if (value.includes("\\")) return null;
+  return value;
+}
+
+/**
+ * The returnTo carried in a request's cookies, already validated, or null.
+ *
+ * The value may arrive percent-encoded (Next encodes cookie values when it
+ * serialises them) or raw, so both are accepted before validation.
+ */
+export function returnToFromCookies(cookies: Record<string, string>): string | null {
+  const raw = cookies[RETURN_TO_COOKIE];
+  if (!raw) return null;
+  let decoded = raw;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    // A malformed escape sequence is not a path we can trust; validate the raw.
+  }
+  return safeReturnTo(decoded);
+}
+
+/** set-cookie header that clears the returnTo cookie (post-callback). */
+export function clearReturnToCookieHeader(opts: CookieOptions = {}): string {
+  return cookieHeader(RETURN_TO_COOKIE, "", { ...sessionCookieOptions(opts), maxAge: 0 });
 }
