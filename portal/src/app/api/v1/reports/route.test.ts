@@ -36,16 +36,20 @@ describe("reports list route", () => {
   beforeEach(() => { vi.stubEnv("APP_MODE", "prod"); vi.stubEnv("KEYCLOAK_ISSUER", "https://kc.test"); vi.stubEnv("KEYCLOAK_CLIENT_ID", "test"); });
   afterEach(() => { vi.unstubAllEnvs(); });
 
-  it("401 without a verified session", async () => {
-    expect((await GET(req("/api/v1/reports"))).status).toBe(401);
+  it("401 without a verified session, with the spec's error body", async () => {
+    const res = await GET(req("/api/v1/reports"));
+    expect(res.status).toBe(401);
+    expect((await res.json()).error).toBe("Unauthorized");
   });
 
-  it("403 when the role lacks report.view", async () => {
+  it("403 when the role lacks report.view, with the spec's error body", async () => {
     setup("asset_manager");
-    expect((await GET(req("/api/v1/reports"))).status).toBe(403);
+    const res = await GET(req("/api/v1/reports"));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe("Forbidden");
   });
 
-  it("200 with reports that include their attestation, for report.view roles", async () => {
+  it("200 lists reports for report.view roles", async () => {
     setup("report_viewer");
     const res = await GET(req("/api/v1/reports"));
     expect(res.status).toBe(200);

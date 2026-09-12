@@ -88,9 +88,22 @@ export async function approveScopeVersion(ctx: TenantContext, versionId: string)
   });
 }
 
-export async function listScopeSets(ctx: TenantContext): Promise<(ScopeSet & { versions: ScopeVersion[] })[]> {
+export async function listScopeSets(
+  ctx: TenantContext
+): Promise<(ScopeSet & { versions: (ScopeVersion & { _count: { items: number } })[] })[]> {
   return withTenant(ctx.organizationId, (tx) =>
-    tx.scopeSet.findMany({ where: { organizationId: ctx.organizationId }, orderBy: { createdAt: "desc" }, include: { versions: { orderBy: { versionNumber: "desc" } } } })
+    tx.scopeSet.findMany({
+      where: { organizationId: ctx.organizationId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        versions: {
+          orderBy: { versionNumber: "desc" },
+          // Item count only — the standalone customer UI shows "v4 · 4 assets"
+          // without pulling every ScopeItem row across the wire.
+          include: { _count: { select: { items: true } } },
+        },
+      },
+    })
   );
 }
 
