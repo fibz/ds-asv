@@ -31,6 +31,19 @@ Every task's requirements implicitly include this section.
 
 ---
 
+## Resolved during execution (verified 2026-09-12, against the real tree)
+
+Three questions this plan deliberately left open are now answered. Executors must follow these, not the earlier guesses inline in Tasks 6 and 14.
+
+1. **`GET /api/v1/scope-versions/[versionId]` does not exist** — the folder holds only `approve/`, `authorization/`, `submit/`. **`GET /api/v1/scope-sets/[scopeSetId]/versions` does not exist either** — that route is `POST` only. So the plan's `useScopeVersion` hook and the `useApprovedScopeVersionId` fan-out had nothing to call.
+   **Resolution: no new endpoint is needed.** `listScopeSets` (`portal/src/lib/scope/service.ts:91`) already returns each set with its `versions` nested, ordered `versionNumber desc`, and now also each version's `_count.items`. `GET /api/v1/scope-sets` therefore carries everything the Scope screen and the gate need, in one request.
+   - The approved-version lookup becomes a pure derivation from that one response: for a report, find its `scopeVersionId` among the nested versions and treat it as approved iff that version's `status === "approved"` — which is exactly the portal's own rule (`scope?.status === "approved" ? scope.id : null`).
+   - `ScopeVersionApi` gains `_count: { items: number }`, and the version count for the hero comes from there.
+
+2. **`/api/auth/login` takes no return target.** `portal/src/app/api/auth/login/route.ts` reads no query params: it builds the authorize URL, sets the short-lived `asv_oauth_state` cookie, and redirects. `signInUrl()` must therefore be parameterless and return `"/api/auth/login"`; the app lands back on `/` after the callback. There is no `returnTo` to encode.
+
+3. **The reverse proxy on the production host is still unknown** and remains a human answer (Task 16 Step 1). No nginx, Caddy, Traefik or systemd unit for an edge exists in this repo.
+
 ## File Structure
 
 ```
@@ -903,7 +916,7 @@ git commit -m "feat(customer-ui): primitive components"
   - `class ApiError extends Error { status: number }`
   - `apiGet<T>(path: string, signal?: AbortSignal): Promise<T>` — path is relative to `/api/v1`, always `credentials: "include"`
   - Types mirroring the real API: `AssetApi`, `ScanApi`, `FindingApi`, `ReportApi`, `ScopeSetApi`, `ScopeVersionApi`, `AuditEventApi` (field names copied from `portal/prisma/schema.prisma`)
-  - Query hooks: `useAssets`, `useScans`, `useReports`, `useScopeSets`, `useScopeVersion`, `useScanFindings`, `useAudit`
+  - Query hooks: `useAssets`, `useScans`, `useReports`, `useScopeSets`, `useScanFindings`, `useAudit` — and nothing for scope versions: they arrive nested inside `/scope-sets` (see "Resolved during execution")
   - `auth.ts`: `signInUrl(returnTo: string): string`, `signOutUrl(): string`
 - Consumed by: every view model (Task 7) and screen (Tasks 10–14)
 
@@ -1090,13 +1103,6 @@ export const useReports = (): UseQueryResult<ReportApi[]> =>
 export const useScopeSets = (): UseQueryResult<ScopeSetApi[]> =>
   useQuery({ queryKey: keys.scopeSets, queryFn: async () => (await apiGet<{ scopeSets: ScopeSetApi[] }>("/scope-sets")).scopeSets });
 
-export const useScopeVersion = (id: string | null): UseQueryResult<ScopeVersionApi> =>
-  useQuery({
-    queryKey: keys.scopeVersion(id ?? "none"),
-    enabled: Boolean(id),
-    queryFn: () => apiGet<ScopeVersionApi>(`/scope-versions/${id}`),
-  });
-
 export const useScanFindings = (scanId: string | null): UseQueryResult<FindingApi[]> =>
   useQuery({
     queryKey: keys.findings(scanId ?? "none"),
@@ -1104,13 +1110,17 @@ export const useScanFindings = (scanId: string | null): UseQueryResult<FindingAp
     queryFn: async () => (await apiGet<{ findings: FindingApi[] }>(`/scans/${scanId}/findings`)).findings,
   });
 
+// NOT a scope-version fetch: there is no GET /scope-versions/:id route.
+// Versions come nested inside /scope-sets — read them from useScopeSets().data.
+// See "Resolved during execution" at the top of this plan.
+
 export const useAudit = (): UseQueryResult<AuditEventApi[]> =>
   useQuery({ queryKey: keys.audit, queryFn: async () => (await apiGet<{ events: AuditEventApi[] }>("/audit")).events });
 
 export { ApiError };
 ```
 
-**Note on `useScopeVersion`:** confirm the shape of `GET /api/v1/scope-versions/[versionId]` before relying on it — if no such route exists, add the read to the reports-scope path or extend `GET /api/v1/reports` to include each report's scope version status (which is the smaller change and keeps the client to one call).
+**Note on scope versions:** RESOLVED — there is no `GET /api/v1/scope-versions/[versionId]` route (verified 2026-09-12). Do not call it. Versions arrive nested inside `GET /api/v1/scope-sets`; see "Resolved during execution" at the top of this plan.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -2677,22 +2687,19 @@ Add to `customer-ui/src/lib/api/queries.ts`:
 
 ```ts
 /**
- * The one place "the approved scope version" is derived. Home, Reports and
+ * The one place the "approved scope version" is read. Home, Reports and
  * ReportDetail all consume this so the gate cannot drift between screens.
- * Reads /scope-sets then each set's versions, and returns the newest approved
- * version's id, or null when nothing is approved.
+ *
+ * Versions arrive nested inside /scope-sets (there is no /scope-versions GET
+ * route), so this is a pure derivation over the one response — no fan-out.
+ * Returns the newest approved version's id, or null when nothing is approved.
  */
 export function useApprovedScopeVersionId(): string | null {
   const sets = useScopeSets();
-  const setsWithIds = sets.data ?? [];
-  const versions = useQueries({
-    queries: setsWithIds.map((s) => ({
-      queryKey: ["scope-versions", s.id] as const,
-      queryFn: async () => (await apiGet<{ versions: ScopeVersionApi[] }>(`/scope-sets/${s.id}/versions`)).versions,
-    })),
-  });
-  const all = versions.flatMap((q) => q.data ?? []);
-  const approved = all.filter((v) => v.status === "approved").sort((a, b) => b.versionNumber - a.versionNumber);
+  const versions = (sets.data ?? []).flatMap((s) => s.versions ?? []);
+  const approved = versions
+    .filter((v) => v.status === "approved")
+    .sort((a, b) => b.versionNumber - a.versionNumber);
   return approved[0]?.id ?? null;
 }
 ```
@@ -3005,8 +3012,8 @@ git commit -m "docs(customer-ui): deployment runbook and same-origin proxy rules
 
 **Known soft spots the executor must resolve, not guess:**
 
-1. `GET /api/v1/scope-versions/[versionId]` and the response key of `GET /api/v1/scope-sets/[scopeSetId]/versions` must be confirmed before Task 6's hooks are relied on (noted in Task 6 Step 3 and Task 14 Step 3). If neither returns a list of versions per set, extend `GET /api/v1/reports` (Task 1) to include `approvedScopeVersionId` per report and drop the fan-out.
-2. The exact query-parameter name on `/api/auth/login` (Task 6 Step 1) — confirmed by reading the route, not assumed.
+1. ~~`GET /api/v1/scope-versions/[versionId]` and the response key of `GET /api/v1/scope-sets/[scopeSetId]/versions`~~ — **RESOLVED 2026-09-12: neither route exists as a GET; no new endpoint is required** because `listScopeSets` already nests versions (with `_count.items`). See "Resolved during execution".
+2. ~~The exact query-parameter name on `/api/auth/login` (Task 6 Step 1)~~ — **RESOLVED 2026-09-12: the route takes no query params at all**; `signInUrl()` is parameterless and returns `"/api/auth/login"`.
 3. Which reverse proxy purple uses (Task 16 Step 1) — a human answer, not a guess.
 
 
