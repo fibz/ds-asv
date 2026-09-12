@@ -189,7 +189,7 @@ Expected: PASS, 3 tests.
 ```bash
 cd portal && npx vitest run
 ```
-Expected: previous total + 3, all passing.
+Expected: previous total + 3, all passing. (Baseline measured on 2026-09-12: `Test Files 69 passed (69)`, `Tests 413 passed | 3 skipped (416)`; after this task, 416 passed + 3 skipped. The 3 skips are the live Keycloak suite (`exit.live.test.ts`) which skips cleanly without docker.)
 
 - [ ] **Step 6: Commit**
 
