@@ -74,7 +74,10 @@ export function Scans() {
             title="No scans yet"
             description="Once your scope is approved you can run a scan against it. Results arrive as findings on the report."
             action={
-              <Link to="/scope" className="rounded-[var(--radius)] bg-[var(--accent)] text-white text-[14px] font-medium px-3.5 py-2">
+              // Secondary on purpose: the header "New scan" is this screen's
+              // single filled primary, so the empty-state next step must not be
+              // a second accent-filled control beside it.
+              <Link to="/scope" className="rounded-[var(--radius)] border border-[var(--border)] text-[var(--ink)] bg-[var(--surface)] hover:bg-[var(--canvas)] text-[14px] font-medium px-3.5 py-2">
                 Open scope
               </Link>
             }

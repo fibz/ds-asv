@@ -127,7 +127,7 @@ export function Reports() {
                       <StageProgress steps={reportSteps(r, gate)} />
                     </div>
                     <div className="mt-3">
-                      <GateCallout gate={gate} reportId={r.id} />
+                      <GateCallout gate={gate} reportId={r.id} downloadVariant="secondary" />
                     </div>
                     <div className="mt-3">
                       <Link to={`/reports/${r.id}`} className="text-[13px] font-medium">

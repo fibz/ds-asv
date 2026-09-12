@@ -17,7 +17,18 @@ import { Scans } from "./Scans";
 
 const scan = (over = {}) => ({ id: "s1", name: "Q3 external", status: "COMPLETED", startedAt: "2026-08-12T09:00:00Z", completedAt: "2026-08-12T09:44:00Z", createdAt: "2026-08-12T09:00:00Z", manifestIssuedAt: null, manifestExpiresAt: null, ...over });
 const scopeSet = { id: "set1", name: "Production", description: null, createdAt: "", versions: [] };
+const approvedScopeSet = {
+  id: "set1", name: "Production", description: null, createdAt: "",
+  versions: [{ id: "v1", scopeSetId: "set1", versionNumber: 1, status: "approved", contentHash: null, submittedAt: null, approvedAt: "2026-08-01" }],
+};
 const renderScans = () => render(<MemoryRouter><Scans /></MemoryRouter>);
+
+// The primary variant is the accent-filled control. The screen must show exactly
+// one - the header "New scan" - and never a second filled action beside it.
+const primaryStyled = () =>
+  Array.from(document.querySelectorAll("button, a")).filter((el) =>
+    /bg-\[var\(--accent\)\]/.test(el.className)
+  );
 
 describe("Scans", () => {
   it("explains why a new scan is not possible instead of silently disabling it", () => {
@@ -79,5 +90,43 @@ describe("Scans", () => {
     renderScans();
     expect(screen.getByText("scan.view")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps exactly one primary control when the list is empty and no scope is approved", () => {
+    vi.mocked(useScans).mockReturnValue({ data: [], isLoading: false, error: null, refetch: vi.fn() } as never);
+    vi.mocked(useScopeSets).mockReturnValue({ data: [], isLoading: false, error: null, refetch: vi.fn() } as never);
+    renderScans();
+
+    // "New scan" (disabled here) is the screen's single filled control; the
+    // empty-state next step is the outline variant, so the two never compete.
+    const primaries = primaryStyled();
+    expect(primaries).toHaveLength(1);
+    expect(primaries[0]).toHaveTextContent(/New scan/i);
+
+    const openScope = screen.getByRole("link", { name: /Open scope/i });
+    expect(openScope.className).not.toMatch(/bg-\[var\(--accent\)\]/);
+    expect(openScope.className).toMatch(/border/);
+  });
+
+  it("keeps the enabled New scan as the only primary when the list is empty and a scope is approved", () => {
+    vi.mocked(useScans).mockReturnValue({ data: [], isLoading: false, error: null, refetch: vi.fn() } as never);
+    vi.mocked(useScopeSets).mockReturnValue({ data: [approvedScopeSet], isLoading: false, error: null, refetch: vi.fn() } as never);
+    renderScans();
+
+    const newScan = screen.getByRole("button", { name: /New scan/i });
+    expect(newScan).toBeEnabled();
+    const primaries = primaryStyled();
+    expect(primaries).toHaveLength(1);
+    expect(primaries[0]).toBe(newScan);
+
+    expect(screen.getByRole("link", { name: /Open scope/i }).className).not.toMatch(/bg-\[var\(--accent\)\]/);
+  });
+
+  it("keeps exactly one primary control when the list has scans", () => {
+    vi.mocked(useScans).mockReturnValue({ data: [scan(), scan({ id: "s2" })], isLoading: false, error: null, refetch: vi.fn() } as never);
+    vi.mocked(useScopeSets).mockReturnValue({ data: [approvedScopeSet], isLoading: false, error: null, refetch: vi.fn() } as never);
+    renderScans();
+    expect(primaryStyled()).toHaveLength(1);
+    expect(screen.queryByText(/No scans yet/i)).toBeNull();
   });
 });

@@ -56,6 +56,13 @@ const scan = { id: "s1", name: "Q3 external", status: "COMPLETED", startedAt: "2
 const renderReports = () => render(<MemoryRouter><Reports /></MemoryRouter>);
 const state = () => screen.getByTestId("report-state-r1");
 
+// The primary variant is the accent-filled control. A screen must show at most
+// one; the per-report download must never be it.
+const primaryStyled = () =>
+  Array.from(document.querySelectorAll("button, a")).filter((el) =>
+    /bg-\[var\(--accent\)\]/.test(el.className)
+  );
+
 describe("Reports", () => {
   it("does not label a submitted report final even though it records an approved scope version", () => {
     vi.mocked(useReports).mockReturnValue({ data: [report()], isLoading: false, error: null, refetch: vi.fn() } as never);
@@ -165,5 +172,27 @@ describe("Reports", () => {
     renderReports();
     expect(screen.getByText("report.view")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("still offers the download on a final report, as the secondary (outline) control", () => {
+    vi.mocked(useReports).mockReturnValue({ data: [report({ status: "attested", attestation: attestedAttestation })], isLoading: false, error: null, refetch: vi.fn() } as never);
+    vi.mocked(useScans).mockReturnValue({ data: [scan], isLoading: false, error: null, refetch: vi.fn() } as never);
+    vi.mocked(useScopeSets).mockReturnValue(scopeSets(version("v4", 4, "approved")) as never);
+    renderReports();
+
+    const download = screen.getByRole("link", { name: /Download PDF/i });
+    expect(download).toHaveAttribute("href", "/api/v1/reports/r1/download");
+    // One primary action per screen: a list of reports is not five filled buttons.
+    expect(download.className).not.toMatch(/bg-\[var\(--accent\)\]/);
+    expect(download.className).toMatch(/border/);
+    expect(primaryStyled()).toHaveLength(0);
+  });
+
+  it("withholds the download until the gate says the report is final", () => {
+    vi.mocked(useReports).mockReturnValue({ data: [report()], isLoading: false, error: null, refetch: vi.fn() } as never);
+    vi.mocked(useScans).mockReturnValue({ data: [scan], isLoading: false, error: null, refetch: vi.fn() } as never);
+    vi.mocked(useScopeSets).mockReturnValue(scopeSets(version("v4", 4, "approved")) as never);
+    renderReports();
+    expect(screen.queryByRole("link", { name: /Download PDF/i })).toBeNull();
   });
 });
