@@ -57,6 +57,8 @@ Three questions this plan deliberately left open are now answered. Executors mus
 11. **The signed authorisation cannot be downloaded — the endpoint only issues it.** `scope-versions/[versionId]/authorization` is **POST-only** (it mints a signed statement, requires `authorization.issue`, returns 201); there is no GET, and `portal/spec/openapi.yaml` agrees. The Scope hero therefore shows the real evidence it does have (fingerprint + approval date) instead of a dead control, which was the right call for this pass. **Decision (mine, deferred to a follow-up):** add the action as a *mutation* — "Issue authorisation" for users who hold `authorization.issue` — and let the returned statement be shown and saved client-side, rather than inventing a GET endpoint. Until then the hero must not offer a download link.
 
 
+12. **The signed authorisation is not human-readable from the API.** `POST /api/v1/scope-versions/[versionId]/authorization` returns `{ statementHash, scopeVersionHash, signature }` — hashes and a signature, **not the statement text**. The screen therefore renders exactly those fields and saves them verbatim. If the product intent is a document a merchant or QSA can actually read, the portal must return (or render) the statement; the UI cannot invent one. Flagged to the user, not worked around.
+
 ## File Structure
 
 ```
