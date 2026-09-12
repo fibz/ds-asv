@@ -1,5 +1,5 @@
 // customer-ui/src/screens/Home.tsx
-import { useAssets, useApprovedScopeVersionId, useReports, useScans, useScopeSets } from "../lib/api/queries";
+import { useAssets, useReports, useScans, useScopeSets } from "../lib/api/queries";
 import { quarterInfo, quarterTasks } from "../lib/viewmodels/tasks";
 import { finalReportIdsOf } from "../lib/viewmodels/gate";
 import { TaskRow } from "../components/shell/TaskRow";
@@ -18,7 +18,6 @@ export function Home() {
   const scans = useScans();
   const reports = useReports();
   const scopeSets = useScopeSets();
-  const approvedScopeVersionId = useApprovedScopeVersionId();
 
   const loading = assets.isLoading || scans.isLoading || reports.isLoading || scopeSets.isLoading;
   const failure = assets.error ?? scans.error ?? reports.error ?? scopeSets.error;
@@ -44,9 +43,10 @@ export function Home() {
     versions.filter((v) => v.status === "approved").sort((a, b) => b.versionNumber - a.versionNumber)[0] ?? null;
   const hasDraftScope = versions.some((v) => v.status === "draft" || v.status === "submitted");
 
-  // One rule, one place: which reports are final comes from the gate, keyed to
-  // the approved scope version the portal itself uses.
-  const finalReportIds = finalReportIdsOf(reports.data ?? [], approvedScopeVersionId);
+  // One rule, one place: which reports are final comes from the gate, resolved
+  // per report against the scope version it records — the same rule the portal
+  // page applies (a report older than the newest approved scope stays final).
+  const finalReportIds = finalReportIdsOf(reports.data ?? [], versions);
 
   const now = new Date();
   const quarter = quarterInfo(now);

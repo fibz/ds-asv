@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reportGate, finalReportIdsOf } from "./gate";
+import { reportGate, finalReportIdsOf, approvedScopeVersionIdFor } from "./gate";
 
 const base = {
   status: "attested", scopeVersionId: "v4", approvedScopeVersionId: "v4",
@@ -44,7 +44,40 @@ describe("finalReportIdsOf", () => {
       { id: "r2", status: "submitted", scopeVersionId: "v4", attestation: { status: "submitted", reviewedAt: null } },
       { id: "r3", status: "attested", scopeVersionId: "v3", attestation: { status: "attested", reviewedAt: "2026-06-01" } },
     ];
-    expect(finalReportIdsOf(rows, "v4")).toEqual(["r1"]);
-    expect(finalReportIdsOf(rows, null)).toEqual([]);
+    expect(finalReportIdsOf(rows, [{ id: "v4", status: "approved" }])).toEqual(["r1"]);
+    expect(finalReportIdsOf(rows, [])).toEqual([]);
+  });
+});
+
+describe("approvedScopeVersionIdFor", () => {
+  it("returns the version id when that version is approved", () => {
+    expect(approvedScopeVersionIdFor("v3", [{ id: "v3", status: "approved" }])).toBe("v3");
+  });
+  it("returns null when that version is not approved", () => {
+    expect(approvedScopeVersionIdFor("v3", [{ id: "v3", status: "draft" }])).toBeNull();
+    expect(approvedScopeVersionIdFor("v3", [{ id: "v3", status: "submitted" }])).toBeNull();
+  });
+  it("returns null for a report with no recorded version, or one not in the list", () => {
+    expect(approvedScopeVersionIdFor(null, [{ id: "v3", status: "approved" }])).toBeNull();
+    expect(approvedScopeVersionIdFor("v9", [{ id: "v3", status: "approved" }])).toBeNull();
+  });
+});
+
+describe("finalReportIdsOf against the server rule", () => {
+  const versions = [{ id: "v3", status: "approved" }, { id: "v4", status: "approved" }];
+  const attested = (id: string, scopeVersionId: string) => ({ id, status: "attested", scopeVersionId, attestation: { status: "attested", reviewedAt: "2026-06-12" } });
+
+  it("keeps a report backed by an OLDER approved version final after a newer scope is approved", () => {
+    // This is the divergence this task exists to fix. The server calls it final.
+    expect(finalReportIdsOf([attested("r1", "v3")], versions)).toEqual(["r1"]);
+  });
+
+  it("still withholds finality when the report's version was never approved", () => {
+    expect(finalReportIdsOf([attested("r1", "v5")], versions)).toEqual([]);
+    expect(finalReportIdsOf([attested("r1", "v3")], [{ id: "v3", status: "submitted" }])).toEqual([]);
+  });
+
+  it("still requires attestation", () => {
+    expect(finalReportIdsOf([{ id: "r1", status: "submitted", scopeVersionId: "v3", attestation: { status: "submitted", reviewedAt: null } }], versions)).toEqual([]);
   });
 });

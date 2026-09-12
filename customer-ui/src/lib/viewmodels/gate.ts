@@ -73,21 +73,39 @@ export function reportGate(input: GateInput): GateView {
 }
 
 /**
+ * The portal's per-report rule (portal/src/app/customer/reports/page.tsx): a
+ * report is backed by an approved scope version when the version it records is
+ * itself approved. It does NOT have to be the newest approved version — a
+ * report from an earlier quarter stays final after a newer scope is approved.
+ */
+export function approvedScopeVersionIdFor(
+  reportScopeVersionId: string | null,
+  versions: { id: string; status: string }[]
+): string | null {
+  if (!reportScopeVersionId) return null;
+  const version = versions.find((v) => v.id === reportScopeVersionId);
+  return version?.status === "approved" ? version.id : null;
+}
+
+/**
  * The single place the set of final report ids is derived. Home, the sidebar
  * (useStageRows) and Reports all need "which reports are final" — deriving it
  * more than once would let the screens drift apart. Pure, so it is testable
  * without a render.
+ *
+ * Finality is resolved per report against the version IT records (matching the
+ * portal), never against the newest approved version.
  */
 export function finalReportIdsOf(
   reports: { id: string; status: string; scopeVersionId: string | null; attestation: { status: string; reviewedAt: string | null } | null }[],
-  approvedScopeVersionId: string | null
+  versions: { id: string; status: string }[]
 ): string[] {
   return reports
     .filter((r) =>
       reportGate({
         status: r.status,
         scopeVersionId: r.scopeVersionId,
-        approvedScopeVersionId,
+        approvedScopeVersionId: approvedScopeVersionIdFor(r.scopeVersionId, versions),
         attestationStatus: r.attestation?.status ?? null,
         scopeLabel: null,
         attestedAt: r.attestation?.reviewedAt ?? null,
