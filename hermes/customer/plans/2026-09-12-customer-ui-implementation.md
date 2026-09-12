@@ -42,7 +42,11 @@ Three questions this plan deliberately left open are now answered. Executors mus
 
 2. **`/api/auth/login` takes no return target.** `portal/src/app/api/auth/login/route.ts` reads no query params: it builds the authorize URL, sets the short-lived `asv_oauth_state` cookie, and redirects. `signInUrl()` must therefore be parameterless and return `"/api/auth/login"`; the app lands back on `/` after the callback. There is no `returnTo` to encode.
 
-3. **The reverse proxy on the production host is still unknown** and remains a human answer (Task 16 Step 1). No nginx, Caddy, Traefik or systemd unit for an edge exists in this repo. (The infra inventory already lists `:8443` on purple as "owning service unknown"; the plan is to inspect the host at deploy time rather than have the human guess.)
+3. **The reverse proxy is RESOLVED — it already exists** (verified on purple 2026-09-12, read-only). No human answer was needed.
+   - `ds-asv-portal-proxy-1` = `nginx:1.27-alpine`, publishing `0.0.0.0:8443->8443` with TLS. The edge is **nginx**, not Caddy (a `Caddyfile` sits unused beside it).
+   - Its config is `/home/cchock/projects/ds-asv-portal/deploy/vps/nginx.conf` on purple, bind-mounted into the container. It listens `8443 ssl` and routes `/auth/` → `keycloak:8080`, everything else → `portal:3000`. So `/api/*` already reaches the portal on the same origin — the exact topology spec §7 assumed.
+   - The stack also runs `ds-asv-portal-portal-1` (Next.js), `ds-asv-portal-keycloak-1`, `ds-asv-portal-keycloak-db-1`, `ds-asv-portal-db-1`. `/app/` is therefore a one-block addition, not a new component.
+   - **Risk found while looking:** `/home/cchock/projects/ds-asv-portal/` on purple is **not a git repository**. The production `compose.yml`, `nginx.conf`, `Caddyfile`, `certs/` and `realm.json` exist only on that host, unversioned and with no history. Nothing in this repo holds them. Versioning that directory is a prerequisite for safely changing it.
 4. **Task 10's test contradicted Task 10's own screen.** It asserted that no element reads `0` for an empty organisation, while the screen it specifies renders `Stat value="0"`. A real zero is honest data, not a fabricated value — the assertion was removed and replaced with one that checks the empty-state action instead. Do not "fix" this by hiding real zeros.
 5. **Task 11's links had no routes.** Assets links to `/assets/new` and `/assets/import`, neither of which is in `routes.tsx`, so both would render an empty outlet. Both now route to `Placeholder`. Any new link added to a screen must have a declared route — an empty outlet is a defect, not a stub.
 6. **Task 12's "Submit for approval" action has no mutation layer.** `src/lib/api/client.ts` exposes only `apiGet`; there is no `apiPost`, no mutation hook, and no cache invalidation. The design (spec §5.3) promises the draft banner's primary action, so Task 12 must add `apiPost` and wire `submitScopeVersion` (`POST /api/v1/scope-versions/[versionId]/submit`) with an invalidating mutation — or the screen must state plainly that submission happens elsewhere. It must not render a button that does nothing.
@@ -2908,9 +2912,21 @@ git commit -m "test(customer-ui): colour guard, state coverage, keyboard and smo
 **Interfaces:**
 - Produces: a build artifact (`customer-ui/dist/`) plus the exact reverse-proxy rules that serve it at `/app` and forward `/api/*` to the portal, so the session cookie authenticates both.
 
-- [ ] **Step 1: Confirm the edge with the human before writing the rule that will be used**
+- [ ] **Step 1: Confirm the edge — RESOLVED, nginx (verified on the host 2026-09-12)**
 
-There is no reverse proxy in this repo today (verified: no `Caddyfile`, no `nginx.conf`, no Traefik config). Ask which edge purple runs (or will run) — nginx, Caddy, or something else — and record the answer in the runbook. Both candidate rules are written below so the runbook is complete either way; the human picks one.
+Do not ask the human; it is known. purple already runs an nginx edge in the portal compose stack:
+
+| Fact | Value |
+|---|---|
+| Container | `ds-asv-portal-proxy-1` (`nginx:1.27-alpine`), `0.0.0.0:8443->8443` |
+| Config on host | `/home/cchock/projects/ds-asv-portal/deploy/vps/nginx.conf` (bind-mounted) |
+| Compose on host | `/home/cchock/projects/ds-asv-portal/deploy/vps/compose.yml` |
+| Current routing | `/auth/` → `keycloak:8080`; `/` → `portal:3000` (so `/api/*` already hits the portal, same origin) |
+| App tier | `ds-asv-portal-portal-1` (Next.js :3000), keycloak + keycloak-db, db |
+
+The `Caddyfile` in that directory is unused — nginx is what is running. Do not write a Caddy rule expecting it to take effect.
+
+**Before changing anything there: that directory is NOT under version control.** Record that as a finding, and treat "put `deploy/vps/` under version control (in this repo or a sibling) before editing it" as part of this task — editing unversioned production config with no way to diff or roll back is the actual risk, not the nginx syntax.
 
 - [ ] **Step 2: Write the build and verify the base path**
 
