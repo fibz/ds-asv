@@ -13,6 +13,10 @@ export const routes = [
   { path: "/assets", element: <Assets />, chrome: true },
   { path: "/assets/new", element: <Placeholder title="Add asset" pass="second pass" />, chrome: true },
   { path: "/assets/import", element: <Placeholder title="Import assets" pass="second pass" />, chrome: true },
+  // The assets list links every row to `/assets/{id}`; that detail screen is a
+  // second-pass destination, so the route must exist (routed to Placeholder)
+  // rather than leaving the link pointing at nothing.
+  { path: "/assets/:id", element: <Placeholder title="Asset" pass="second pass" />, chrome: true },
   { path: "/scope", element: <Scope />, chrome: true },
   { path: "/scans", element: <Scans />, chrome: true },
   { path: "/reports", element: <Reports />, chrome: true },

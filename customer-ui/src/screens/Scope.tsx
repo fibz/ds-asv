@@ -26,6 +26,9 @@ export function Scope() {
   // A 403 on submit is a permission problem, not a crash: the customer cannot
   // perform this action, so say that instead of echoing an error.
   const forbidden = error instanceof ApiError && error.status === 403;
+  // The same rule for the read: a 403 on the scope list is a permission wall,
+  // not a read failure with a retry that could never succeed.
+  const readForbidden = scopeSets.error instanceof ApiError && scopeSets.error.status === 403;
 
   const heroCount = inForce ? itemCount(inForce) : null;
   const heroApproved = inForce ? day(inForce.approvedAt) : null;
@@ -44,9 +47,15 @@ export function Scope() {
         </div>
       ) : null}
 
-      {scopeSets.error ? (
+      {scopeSets.error && !readForbidden ? (
         <div className="mt-6">
           <ErrorState message="We couldn’t read your scope." onRetry={() => void scopeSets.refetch()} />
+        </div>
+      ) : null}
+
+      {readForbidden ? (
+        <div className="mt-6">
+          <PermissionState permission="scope.view" />
         </div>
       ) : null}
 

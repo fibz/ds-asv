@@ -2,12 +2,13 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAssets } from "../lib/api/queries";
+import { ApiError } from "../lib/api/client";
 import { Badge } from "../components/primitives/Badge";
 import { EmptyState } from "../components/primitives/EmptyState";
 import { Toolbar } from "../components/primitives/Toolbar";
 import { RecordCard } from "../components/shell/RecordCard";
 import { Skeleton } from "../components/shell/Skeleton";
-import { ErrorState } from "../components/shell/states";
+import { ErrorState, PermissionState } from "../components/shell/states";
 import type { AssetApi } from "../lib/api/types";
 
 const isVerified = (a: AssetApi) => a.verificationState === "verified";
@@ -15,6 +16,8 @@ const isVerified = (a: AssetApi) => a.verificationState === "verified";
 export function Assets() {
   const { data, isLoading, error, refetch } = useAssets();
   const [query, setQuery] = useState("");
+  // A 403 on the assets list is a permission problem, not a read failure.
+  const forbidden = error instanceof ApiError && error.status === 403;
 
   const { live, retired, unverified } = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -71,7 +74,8 @@ export function Assets() {
       </div>
 
       <div className="mt-6">
-        {error ? <ErrorState message="We couldn’t read your asset inventory." onRetry={() => void refetch()} /> : null}
+        {error && !forbidden ? <ErrorState message="We couldn’t read your asset inventory." onRetry={() => void refetch()} /> : null}
+        {forbidden ? <PermissionState permission="asset.manage" /> : null}
         {isLoading ? <Skeleton lines={5} /> : null}
 
         {!isLoading && !error && live.length === 0 && retired.length === 0 ? (

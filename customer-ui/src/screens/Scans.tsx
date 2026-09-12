@@ -1,12 +1,13 @@
 // customer-ui/src/screens/Scans.tsx
 import { Link } from "react-router-dom";
 import { useScans, useScopeSets } from "../lib/api/queries";
+import { ApiError } from "../lib/api/client";
 import { Badge } from "../components/primitives/Badge";
 import { Button } from "../components/primitives/Button";
 import { EmptyState } from "../components/primitives/EmptyState";
 import { RecordCard } from "../components/shell/RecordCard";
 import { Skeleton } from "../components/shell/Skeleton";
-import { ErrorState } from "../components/shell/states";
+import { ErrorState, PermissionState } from "../components/shell/states";
 import { recordLabel, recordStateFromScan, toneForRecord, type RecordState } from "../lib/status";
 
 // Status is never colour alone: every record state carries a distinct glyph next
@@ -35,6 +36,8 @@ export function Scans() {
   const hasScope = carriesVersions ? hasApprovedVersion : sets.length > 0;
 
   const rows = [...(scans.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // A 403 on the scans list is a permission wall, not a read failure.
+  const forbidden = scans.error instanceof ApiError && scans.error.status === 403;
 
   return (
     <div className="max-w-[1100px] mx-auto px-6 py-8">
@@ -62,7 +65,8 @@ export function Scans() {
       ) : null}
 
       <div className="mt-6">
-        {scans.error ? <ErrorState message="We couldn’t read your scans." onRetry={() => void scans.refetch()} /> : null}
+        {scans.error && !forbidden ? <ErrorState message="We couldn’t read your scans." onRetry={() => void scans.refetch()} /> : null}
+        {forbidden ? <PermissionState permission="scan.view" /> : null}
         {scans.isLoading ? <Skeleton lines={5} /> : null}
 
         {!scans.isLoading && !scans.error && rows.length === 0 ? (

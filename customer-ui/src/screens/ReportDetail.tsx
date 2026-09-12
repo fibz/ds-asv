@@ -1,12 +1,13 @@
 // customer-ui/src/screens/ReportDetail.tsx
 import { Link, useParams } from "react-router-dom";
 import { useReports, useScanFindings, useScans, useScopeSets } from "../lib/api/queries";
+import { ApiError } from "../lib/api/client";
 import type { FindingApi, ScopeVersionApi } from "../lib/api/types";
 import { Badge } from "../components/primitives/Badge";
 import { EmptyState } from "../components/primitives/EmptyState";
 import { GateCallout } from "../components/shell/GateCallout";
 import { Skeleton } from "../components/shell/Skeleton";
-import { ErrorState } from "../components/shell/states";
+import { ErrorState, PermissionState } from "../components/shell/states";
 import { approvedScopeVersionIdFor, reportGate } from "../lib/viewmodels/gate";
 import { recordLabel, recordStateFromReport, toneForRecord, type RecordState, type Tone } from "../lib/status";
 
@@ -61,9 +62,15 @@ export function ReportDetail() {
   }
 
   if (reports.error) {
+    // A 403 is a permission wall, not a read failure: no retry could help.
+    const forbidden = reports.error instanceof ApiError && reports.error.status === 403;
     return (
       <div className="max-w-[1100px] mx-auto px-6 py-8">
-        <ErrorState message="We couldn’t read this report." onRetry={() => void reports.refetch()} />
+        {forbidden ? (
+          <PermissionState permission="report.view" />
+        ) : (
+          <ErrorState message="We couldn’t read this report." onRetry={() => void reports.refetch()} />
+        )}
       </div>
     );
   }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
 
 vi.mock("../lib/api/queries", () => ({
   useReports: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock("../lib/api/queries", () => ({
 }));
 
 import { useReports, useScanFindings, useScans, useScopeSets } from "../lib/api/queries";
+import { ApiError } from "../lib/api/client";
 import { ReportDetail } from "./ReportDetail";
 
 const report = {
@@ -76,5 +78,28 @@ describe("ReportDetail", () => {
 
     expect(useScanFindings).toHaveBeenCalledWith(null);
     expect(screen.getByText(/report could not be found/i)).toBeInTheDocument();
+  });
+
+  it("shows a skeleton while the report list loads, not the gate", () => {
+    vi.mocked(useReports).mockReturnValue({ data: undefined, isLoading: true, error: null, refetch: vi.fn() } as never);
+    renderDetail();
+    expect(screen.getByTestId("skeleton")).toBeInTheDocument();
+    expect(screen.queryByText(/Finalisation gate/i)).toBeNull();
+  });
+
+  it("renders an error state with a retry that refetches when the report list fails", async () => {
+    const refetch = vi.fn();
+    vi.mocked(useReports).mockReturnValue({ data: undefined, isLoading: false, error: new Error("x"), refetch } as never);
+    renderDetail();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("renders the permission state for a 403 instead of a read error with a retry", () => {
+    vi.mocked(useReports).mockReturnValue({ data: undefined, isLoading: false, error: new ApiError("Forbidden", 403), refetch: vi.fn() } as never);
+    renderDetail();
+    expect(screen.getByText("report.view")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

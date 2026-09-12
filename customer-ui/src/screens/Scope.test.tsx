@@ -102,15 +102,25 @@ describe("Scope", () => {
     expect(screen.getByText(/Superseded/i)).toBeInTheDocument();
   });
 
-  it("shows a skeleton while loading and an error state with a retry on failure", () => {
+  it("shows a skeleton while loading and an error state with a retry on failure", async () => {
     vi.mocked(useScopeSets).mockReturnValue({ data: undefined, isLoading: true, error: null, refetch: vi.fn() } as never);
     const { unmount } = renderScope();
+    expect(screen.getByTestId("skeleton")).toBeInTheDocument();
     expect(screen.queryByText(/No approved scope/i)).toBeNull();
     unmount();
 
-    vi.mocked(useScopeSets).mockReturnValue({ data: undefined, isLoading: false, error: new Error("x"), refetch: vi.fn() } as never);
+    const refetch = vi.fn();
+    vi.mocked(useScopeSets).mockReturnValue({ data: undefined, isLoading: false, error: new Error("x"), refetch } as never);
     renderScope();
     expect(screen.getByRole("alert")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Try again/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("renders the permission state when the scope read itself is forbidden", () => {
+    vi.mocked(useScopeSets).mockReturnValue({ data: undefined, isLoading: false, error: new ApiError("Forbidden", 403), refetch: vi.fn() } as never);
+    renderScope();
+    expect(screen.getByText("scope.view")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

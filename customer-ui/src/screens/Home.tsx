@@ -1,10 +1,11 @@
 // customer-ui/src/screens/Home.tsx
 import { useAssets, useReports, useScans, useScopeSets } from "../lib/api/queries";
+import { ApiError } from "../lib/api/client";
 import { quarterInfo, quarterTasks } from "../lib/viewmodels/tasks";
 import { finalReportIdsOf } from "../lib/viewmodels/gate";
 import { TaskRow } from "../components/shell/TaskRow";
 import { Skeleton } from "../components/shell/Skeleton";
-import { ErrorState } from "../components/shell/states";
+import { ErrorState, PermissionState } from "../components/shell/states";
 import { Stat } from "../components/primitives/Stat";
 
 /**
@@ -23,17 +24,24 @@ export function Home() {
   const failure = assets.error ?? scans.error ?? reports.error ?? scopeSets.error;
 
   if (failure) {
+    // A 403 is a permission problem, not a failure to read: say so instead of
+    // showing the generic "we couldn't read" error with a useless retry.
+    const forbidden = failure instanceof ApiError && failure.status === 403;
     return (
       <div className="max-w-[1100px] mx-auto px-6 py-8">
-        <ErrorState
-          message="We couldn’t read your compliance data just now."
-          onRetry={() => {
-            void assets.refetch();
-            void scans.refetch();
-            void reports.refetch();
-            void scopeSets.refetch();
-          }}
-        />
+        {forbidden ? (
+          <PermissionState permission="org.view" />
+        ) : (
+          <ErrorState
+            message="We couldn’t read your compliance data just now."
+            onRetry={() => {
+              void assets.refetch();
+              void scans.refetch();
+              void reports.refetch();
+              void scopeSets.refetch();
+            }}
+          />
+        )}
       </div>
     );
   }

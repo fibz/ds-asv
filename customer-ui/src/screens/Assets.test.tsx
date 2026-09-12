@@ -12,6 +12,7 @@ vi.mock("../lib/api/queries", () => ({
 }));
 
 import { useAssets } from "../lib/api/queries";
+import { ApiError } from "../lib/api/client";
 import { Assets } from "./Assets";
 
 const asset = (over = {}) => ({ id: "a1", type: "fqdn", canonicalIdentifier: "shop.example.com", displayName: null, owner: null, environment: null, criticality: "medium", lifecycleState: "active", verificationState: "verified", source: "manual", lastSeenAt: null, createdAt: "2026-08-01T00:00:00Z", updatedAt: "2026-08-01T00:00:00Z", ...over });
@@ -47,13 +48,24 @@ describe("Assets", () => {
     expect(screen.getByText("old.example.com")).toBeInTheDocument();
   });
 
-  it("shows a skeleton while loading and an error state with a retry on failure", () => {
+  it("shows a skeleton while loading and an error state with a retry on failure", async () => {
     vi.mocked(useAssets).mockReturnValue({ data: undefined, isLoading: true, error: null, refetch: vi.fn() } as never);
     const { unmount } = renderAssets();
+    expect(screen.getByTestId("skeleton")).toBeInTheDocument();
     expect(screen.queryByText(/No assets yet/i)).toBeNull();
     unmount();
-    vi.mocked(useAssets).mockReturnValue({ data: undefined, isLoading: false, error: new Error("x"), refetch: vi.fn() } as never);
+    const refetch = vi.fn();
+    vi.mocked(useAssets).mockReturnValue({ data: undefined, isLoading: false, error: new Error("x"), refetch } as never);
     renderAssets();
     expect(screen.getByRole("alert")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("renders the permission state for a 403 instead of a read error with a retry", () => {
+    vi.mocked(useAssets).mockReturnValue({ data: undefined, isLoading: false, error: new ApiError("Forbidden", 403), refetch: vi.fn() } as never);
+    renderAssets();
+    expect(screen.getByText("asset.manage")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

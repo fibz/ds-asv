@@ -1,6 +1,7 @@
 // customer-ui/src/screens/Reports.tsx
 import { Link } from "react-router-dom";
 import { useReports, useScans, useScopeSets } from "../lib/api/queries";
+import { ApiError } from "../lib/api/client";
 import type { ReportApi, ScopeVersionApi } from "../lib/api/types";
 import { Badge } from "../components/primitives/Badge";
 import { Card } from "../components/primitives/Card";
@@ -8,7 +9,7 @@ import { EmptyState } from "../components/primitives/EmptyState";
 import { GateCallout } from "../components/shell/GateCallout";
 import { Skeleton } from "../components/shell/Skeleton";
 import { StageProgress } from "../components/shell/StageProgress";
-import { ErrorState } from "../components/shell/states";
+import { ErrorState, PermissionState } from "../components/shell/states";
 import { approvedScopeVersionIdFor, reportGate, type GateView } from "../lib/viewmodels/gate";
 import { recordLabel, recordStateFromReport, toneForRecord, type RecordState, type StageState } from "../lib/status";
 
@@ -57,6 +58,8 @@ export function Reports() {
   const scopeLabelFor = (id: string | null): string | null => (id ? labelById.get(id) ?? id : null);
 
   const rows = [...(reports.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // A 403 on the reports list is a permission wall, not a read failure.
+  const forbidden = reports.error instanceof ApiError && reports.error.status === 403;
 
   return (
     <div className="max-w-[1100px] mx-auto px-6 py-8">
@@ -67,9 +70,10 @@ export function Reports() {
       </p>
 
       <div className="mt-6">
-        {reports.error ? (
+        {reports.error && !forbidden ? (
           <ErrorState message="We couldn’t read your reports." onRetry={() => void reports.refetch()} />
         ) : null}
+        {forbidden ? <PermissionState permission="report.view" /> : null}
         {reports.isLoading ? <Skeleton lines={5} /> : null}
 
         {!reports.isLoading && !reports.error && rows.length === 0 ? (

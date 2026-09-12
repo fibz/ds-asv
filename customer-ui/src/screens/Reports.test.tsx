@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
 
 vi.mock("../lib/api/queries", () => ({
   useReports: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock("../lib/api/queries", () => ({
 }));
 
 import { useReports, useScans, useScopeSets } from "../lib/api/queries";
+import { ApiError } from "../lib/api/client";
 import { Reports } from "./Reports";
 
 const report = (over: Record<string, unknown> = {}) => ({
@@ -133,6 +135,7 @@ describe("Reports", () => {
     vi.mocked(useScans).mockReturnValue({ data: [], isLoading: false, error: null, refetch: vi.fn() } as never);
     vi.mocked(useScopeSets).mockReturnValue(scopeSets() as never);
     renderReports();
+    expect(screen.getByTestId("skeleton")).toBeInTheDocument();
     expect(screen.queryByText(/No reports yet/i)).toBeNull();
   });
 
@@ -144,11 +147,23 @@ describe("Reports", () => {
     expect(screen.getByText(/No reports yet/i)).toBeInTheDocument();
   });
 
-  it("renders an error state with a retry when the query fails", () => {
-    vi.mocked(useReports).mockReturnValue({ data: undefined, isLoading: false, error: new Error("x"), refetch: vi.fn() } as never);
+  it("renders an error state with a retry that refetches when the query fails", async () => {
+    const refetch = vi.fn();
+    vi.mocked(useReports).mockReturnValue({ data: undefined, isLoading: false, error: new Error("x"), refetch } as never);
     vi.mocked(useScans).mockReturnValue({ data: [], isLoading: false, error: null, refetch: vi.fn() } as never);
     vi.mocked(useScopeSets).mockReturnValue(scopeSets() as never);
     renderReports();
     expect(screen.getByRole("alert")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("renders the permission state for a 403 instead of a read error with a retry", () => {
+    vi.mocked(useReports).mockReturnValue({ data: undefined, isLoading: false, error: new ApiError("Forbidden", 403), refetch: vi.fn() } as never);
+    vi.mocked(useScans).mockReturnValue({ data: [], isLoading: false, error: null, refetch: vi.fn() } as never);
+    vi.mocked(useScopeSets).mockReturnValue(scopeSets() as never);
+    renderReports();
+    expect(screen.getByText("report.view")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
