@@ -1,0 +1,110 @@
+<h2>Scope versions — how do immutable snapshots read?</h2>
+<p class="subtitle">A scope version is frozen once submitted, carries a hash, and only an approved version can back a scan. Question: how do you show a stack of them without inviting edits that can't happen?</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Version cards, newest first</h3>
+      <p>Each snapshot is a card with its state, contents and fingerprint. Immutability is obvious because every card is a sealed object, not a form. "What changed" is a line inside the card.</p>
+      <div style="margin-top:10px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:14px;color:#18181b;font-family:ui-sans-serif,system-ui,sans-serif">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:12.5px;font-weight:600">Scope</div>
+          <div style="background:#6d28d9;color:#fff;font-size:9.5px;font-weight:500;border-radius:6px;padding:5px 11px">Start new version</div>
+        </div>
+        <div style="border:1px solid #bbf7d0;background:#f0fdf4;border-radius:6px;padding:11px 12px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:11px;font-weight:500">v4 — current approved scope</div>
+            <span style="font-size:9px;background:#fff;color:#15803d;border:1px solid #bbf7d0;border-radius:4px;padding:2px 7px">Approved</span>
+          </div>
+          <div style="font-size:9.5px;color:#52525b;margin-top:4px">4 assets · approved 2 Aug 2026 by QA staff · used by 2 scans</div>
+          <div style="font-size:9px;color:#15803d;margin-top:5px">+1 asset since v3 · fingerprint 9f2c…a41d</div>
+        </div>
+        <div style="border:1px solid #e4e4e7;border-radius:6px;padding:11px 12px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:11px">v3 — retired</div>
+            <span style="font-size:9px;background:#fafafa;color:#71717a;border:1px solid #e4e4e7;border-radius:4px;padding:2px 7px">Superseded</span>
+          </div>
+          <div style="font-size:9.5px;color:#71717a;margin-top:4px">3 assets · approved 4 May 2026 · used by 1 scan</div>
+        </div>
+        <div style="border:1px solid #e4e4e7;border-radius:6px;padding:11px 12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:11px">v5 — working draft</div>
+            <span style="font-size:9px;background:#faf5ff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:4px;padding:2px 7px">Draft</span>
+          </div>
+          <div style="font-size:9.5px;color:#71717a;margin-top:4px">5 assets · edited today · not submitted, cannot back a scan</div>
+          <div style="display:flex;gap:7px;margin-top:9px">
+            <div style="background:#6d28d9;color:#fff;font-size:9.5px;font-weight:500;border-radius:6px;padding:5px 11px">Submit for approval</div>
+            <div style="border:1px solid #e4e4e7;color:#3f3f46;font-size:9.5px;font-weight:500;border-radius:6px;padding:5px 11px">Edit draft</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Current scope hero + history</h3>
+      <p>One big answer — "this is your approved scope" — with the stack of older versions demoted to a compact history list. Fewer decisions on arrival.</p>
+      <div style="margin-top:10px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:14px;color:#18181b;font-family:ui-sans-serif,system-ui,sans-serif">
+        <div style="border:1px solid #bbf7d0;border-radius:6px;padding:14px;margin-bottom:11px">
+          <div style="font-size:9px;letter-spacing:.08em;color:#15803d;font-weight:500">APPROVED SCOPE IN FORCE</div>
+          <div style="font-size:18px;font-weight:600;margin-top:5px;letter-spacing:-.01em">v4 · 4 assets</div>
+          <div style="font-size:10px;color:#71717a;margin-top:5px;line-height:1.5">Approved 2 Aug 2026 by QA staff · fingerprint 9f2c…a41d · backs 2 scans</div>
+          <div style="display:flex;gap:7px;margin-top:11px">
+            <div style="border:1px solid #e4e4e7;color:#3f3f46;font-size:10px;font-weight:500;border-radius:6px;padding:6px 12px">View assets (4)</div>
+            <div style="border:1px solid #e4e4e7;color:#3f3f46;font-size:10px;font-weight:500;border-radius:6px;padding:6px 12px">Download authorisation</div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+          <div style="font-size:10px;font-weight:500;color:#52525b">Draft v5 — 5 assets, edited today</div>
+          <div style="font-size:9.5px;color:#6d28d9">Continue editing →</div>
+        </div>
+        <div style="border-top:1px solid #f4f4f5;padding-top:9px">
+          <div style="font-size:8px;letter-spacing:.07em;color:#a1a1aa;font-weight:500;margin-bottom:7px">VERSION HISTORY</div>
+          <div style="display:flex;font-size:9.5px;padding:4px 0"><div style="flex:1;color:#52525b">v3</div><div style="flex:2;color:#71717a">Approved 4 May 2026</div><div style="flex:1;color:#71717a">3 assets</div><div style="flex:.6;color:#a1a1aa;text-align:right">superseded</div></div>
+          <div style="display:flex;font-size:9.5px;padding:4px 0"><div style="flex:1;color:#52525b">v2</div><div style="flex:2;color:#71717a">Approved 6 Feb 2026</div><div style="flex:1;color:#71717a">3 assets</div><div style="flex:.6;color:#a1a1aa;text-align:right">superseded</div></div>
+          <div style="display:flex;font-size:9.5px;padding:4px 0"><div style="flex:1;color:#52525b">v1</div><div style="flex:2;color:#71717a">Approved 3 Nov 2025</div><div style="flex:1;color:#71717a">2 assets</div><div style="flex:.6;color:#a1a1aa;text-align:right">superseded</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Locked-version flow, left to right</h3>
+      <p>Versions as a horizontal chain — approved ones look sealed, the draft is the only open one. Makes "immutable chain" visceral; weak once there are 12 versions.</p>
+      <div style="margin-top:10px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:14px;color:#18181b;font-family:ui-sans-serif,system-ui,sans-serif">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:12px">Scope versions</div>
+        <div style="display:flex;gap:8px;align-items:stretch">
+          <div style="flex:1;border:1px solid #e4e4e7;background:#fafafa;border-radius:6px;padding:10px">
+            <div style="font-size:10px;color:#52525b">v3</div>
+            <div style="font-size:9px;color:#a1a1aa;margin-top:3px">3 assets</div>
+            <div style="font-size:9px;color:#a1a1aa;margin-top:2px">4 May 2026</div>
+            <div style="font-size:8.5px;color:#71717a;margin-top:7px">🔒 sealed</div>
+          </div>
+          <div style="flex:1;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:6px;padding:10px">
+            <div style="font-size:10px;font-weight:500">v4</div>
+            <div style="font-size:9px;color:#52525b;margin-top:3px">4 assets</div>
+            <div style="font-size:9px;color:#52525b;margin-top:2px">2 Aug 2026</div>
+            <div style="font-size:8.5px;color:#15803d;margin-top:7px">🔒 approved · in force</div>
+          </div>
+          <div style="flex:1;border:1px dashed #ddd6fe;background:#faf5ff;border-radius:6px;padding:10px">
+            <div style="font-size:10px;font-weight:500;color:#6d28d9">v5</div>
+            <div style="font-size:9px;color:#6d28d9;margin-top:3px">5 assets</div>
+            <div style="font-size:9px;color:#6d28d9;margin-top:2px">edited today</div>
+            <div style="font-size:8.5px;color:#6d28d9;margin-top:7px">✎ open draft</div>
+          </div>
+        </div>
+        <div style="margin-top:11px;border:1px solid #e4e4e7;border-radius:6px;padding:10px 11px">
+          <div style="font-size:9.5px;color:#52525b">v4 contents: shop.example.com · api.example.com · pay.example.com · 203.0.113.0/24</div>
+          <div style="font-size:9px;color:#a1a1aa;margin-top:5px">Fingerprint 9f2c…a41d · any change to these 4 assets requires a new version and a new approval.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>

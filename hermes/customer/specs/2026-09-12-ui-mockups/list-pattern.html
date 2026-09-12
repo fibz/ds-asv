@@ -1,0 +1,129 @@
+<h2>List screens — table, cards, or split?</h2>
+<p class="subtitle">Shown on Scans because it has the most states (running, passed, failed, findings). Whatever wins here becomes the pattern for assets, findings, team and audit too.</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Dense table</h3>
+      <p>Every record visible as a row, filters in a toolbar, actions on the right. Scales to hundreds of rows; standard compliance-software shape.</p>
+      <div style="margin-top:10px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:14px;color:#18181b;font-family:ui-sans-serif,system-ui,sans-serif">
+        <div style="display:flex;gap:7px;align-items:center;margin-bottom:11px">
+          <div style="font-size:12.5px;font-weight:600;margin-right:4px">Scans</div>
+          <div style="flex:1;border:1px solid #e4e4e7;border-radius:6px;padding:5px 9px;font-size:9.5px;color:#a1a1aa">Search scans…</div>
+          <div style="font-size:9px;border:1px solid #e4e4e7;border-radius:5px;padding:4px 9px;color:#52525b">Q3 2026</div>
+          <div style="font-size:9px;border:1px solid #e4e4e7;border-radius:5px;padding:4px 9px;color:#52525b">All statuses</div>
+          <div style="background:#6d28d9;color:#fff;font-size:9.5px;font-weight:500;border-radius:6px;padding:5px 11px">New scan</div>
+        </div>
+        <div style="border:1px solid #e4e4e7;border-radius:6px;overflow:hidden">
+          <div style="display:flex;background:#fafafa;font-size:8px;color:#a1a1aa;font-weight:500;letter-spacing:.07em">
+            <div style="flex:1.7;padding:6px 9px">SCAN</div><div style="flex:1;padding:6px 9px">SCOPE</div><div style="flex:1.4;padding:6px 9px">STATUS</div><div style="flex:1;padding:6px 9px">FINDINGS</div><div style="flex:.5;padding:6px 9px"></div>
+          </div>
+          <div style="display:flex;font-size:9.5px;border-top:1px solid #f4f4f5;align-items:center">
+            <div style="flex:1.7;padding:7px 9px">Q3 external<span style="color:#a1a1aa"> · 12 Aug</span></div><div style="flex:1;padding:7px 9px;color:#52525b">v4</div>
+            <div style="flex:1.4;padding:7px 9px"><span style="color:#92400e">●</span> Running <span style="color:#a1a1aa">62%</span></div><div style="flex:1;padding:7px 9px;color:#a1a1aa">—</div><div style="flex:.5;padding:7px 9px;color:#a1a1aa">⋯</div>
+          </div>
+          <div style="display:flex;font-size:9.5px;border-top:1px solid #f4f4f5;align-items:center">
+            <div style="flex:1.7;padding:7px 9px">Q3 internal<span style="color:#a1a1aa"> · 9 Aug</span></div><div style="flex:1;padding:7px 9px;color:#52525b">v4</div>
+            <div style="flex:1.4;padding:7px 9px"><span style="color:#3f6212">●</span> Passed</div><div style="flex:1;padding:7px 9px;color:#52525b">2 high · 7 med</div><div style="flex:.5;padding:7px 9px;color:#a1a1aa">⋯</div>
+          </div>
+          <div style="display:flex;font-size:9.5px;border-top:1px solid #f4f4f5;align-items:center">
+            <div style="flex:1.7;padding:7px 9px">Q2 external<span style="color:#a1a1aa"> · 12 Jun</span></div><div style="flex:1;padding:7px 9px;color:#52525b">v3</div>
+            <div style="flex:1.4;padding:7px 9px"><span style="color:#b91c1c">●</span> Failed</div><div style="flex:1;padding:7px 9px;color:#b91c1c">7 high</div><div style="flex:.5;padding:7px 9px;color:#a1a1aa">⋯</div>
+          </div>
+          <div style="display:flex;font-size:9.5px;border-top:1px solid #f4f4f5;align-items:center">
+            <div style="flex:1.7;padding:7px 9px">Q2 internal<span style="color:#a1a1aa"> · 8 Jun</span></div><div style="flex:1;padding:7px 9px;color:#52525b">v2</div>
+            <div style="flex:1.4;padding:7px 9px"><span style="color:#3f6212">●</span> Passed</div><div style="flex:1;padding:7px 9px;color:#52525b">0 high</div><div style="flex:.5;padding:7px 9px;color:#a1a1aa">⋯</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Card list</h3>
+      <p>One card per scan with room for progress and context. Calm and readable when there are a handful of records; gets long past ~30.</p>
+      <div style="margin-top:10px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:14px;color:#18181b;font-family:ui-sans-serif,system-ui,sans-serif">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px">
+          <div style="font-size:12.5px;font-weight:600">Scans</div>
+          <div style="background:#6d28d9;color:#fff;font-size:9.5px;font-weight:500;border-radius:6px;padding:5px 11px">New scan</div>
+        </div>
+        <div style="border:1px solid #ddd6fe;border-radius:6px;padding:11px 12px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:11px;font-weight:500">Q3 external scan</div>
+            <span style="font-size:9px;background:#fffbeb;color:#a16207;border:1px solid #fde68a;border-radius:4px;padding:2px 7px">Running</span>
+          </div>
+          <div style="font-size:9.5px;color:#71717a;margin-top:4px">Scope v4 · 4 assets · started 14 min ago</div>
+          <div style="height:4px;border-radius:99px;background:#f4f4f5;margin:9px 0 4px"><div style="width:62%;height:4px;border-radius:99px;background:#6d28d9"></div></div>
+          <div style="font-size:9px;color:#a1a1aa">Estimated 8 min remaining</div>
+        </div>
+        <div style="border:1px solid #e4e4e7;border-radius:6px;padding:11px 12px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:11px;font-weight:500">Q3 internal scan</div>
+            <span style="font-size:9px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:4px;padding:2px 7px">Passed</span>
+          </div>
+          <div style="font-size:9.5px;color:#71717a;margin-top:4px">Scope v4 · 4 assets · finished 9 Aug</div>
+          <div style="display:flex;gap:7px;margin-top:9px">
+            <span style="font-size:9px;color:#52525b">2 high</span><span style="font-size:9px;color:#52525b">· 7 medium</span><span style="font-size:9px;color:#52525b">· 3 low</span>
+            <span style="font-size:9px;color:#6d28d9;margin-left:auto">View report →</span>
+          </div>
+        </div>
+        <div style="border:1px solid #e4e4e7;border-radius:6px;padding:11px 12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:11px;font-weight:500">Q2 external scan</div>
+            <span style="font-size:9px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:4px;padding:2px 7px">Failed</span>
+          </div>
+          <div style="font-size:9.5px;color:#71717a;margin-top:4px">Scope v3 · 3 assets · finished 12 Jun</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Master–detail split</h3>
+      <p>Compact list on the left, the selected record's full detail on the right — no navigation, no lost context. Widest option; cramped on smaller screens.</p>
+      <div style="margin-top:10px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:14px;color:#18181b;font-family:ui-sans-serif,system-ui,sans-serif">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:11px">Scans</div>
+        <div style="display:flex;gap:11px">
+          <div style="flex:1;border:1px solid #e4e4e7;border-radius:6px;overflow:hidden">
+            <div style="padding:8px 9px;border-bottom:1px solid #f4f4f5;background:#fafafa">
+              <div style="font-size:9.5px;font-weight:500">Q3 external</div><div style="font-size:8.5px;color:#92400e;margin-top:2px">● Running · 62%</div>
+            </div>
+            <div style="padding:8px 9px;border-bottom:1px solid #f4f4f5">
+              <div style="font-size:9.5px">Q3 internal</div><div style="font-size:8.5px;color:#3f6212;margin-top:2px">● Passed · 2 high</div>
+            </div>
+            <div style="padding:8px 9px;border-bottom:1px solid #f4f4f5">
+              <div style="font-size:9.5px">Q2 external</div><div style="font-size:8.5px;color:#b91c1c;margin-top:2px">● Failed · 7 high</div>
+            </div>
+            <div style="padding:8px 9px">
+              <div style="font-size:9.5px">Q2 internal</div><div style="font-size:8.5px;color:#3f6212;margin-top:2px">● Passed</div>
+            </div>
+          </div>
+          <div style="flex:1.6;border:1px solid #e4e4e7;border-radius:6px;padding:11px 12px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="font-size:11px;font-weight:500">Q3 external scan</div>
+              <span style="font-size:9px;background:#fffbeb;color:#a16207;border:1px solid #fde68a;border-radius:4px;padding:2px 7px">Running</span>
+            </div>
+            <div style="font-size:9.5px;color:#71717a;margin-top:4px">Started 12 Aug 09:14 · scope v4 approved · 4 targets</div>
+            <div style="height:4px;border-radius:99px;background:#f4f4f5;margin:10px 0 10px"><div style="width:62%;height:4px;border-radius:99px;background:#6d28d9"></div></div>
+            <div style="display:flex;gap:8px;margin-bottom:10px">
+              <div style="flex:1;border:1px solid #f4f4f5;border-radius:5px;padding:7px 8px"><div style="font-size:8.5px;color:#a1a1aa">Targets done</div><div style="font-size:11px;font-weight:500;margin-top:2px">3 / 4</div></div>
+              <div style="flex:1;border:1px solid #f4f4f5;border-radius:5px;padding:7px 8px"><div style="font-size:8.5px;color:#a1a1aa">Findings so far</div><div style="font-size:11px;font-weight:500;margin-top:2px">9</div></div>
+              <div style="flex:1;border:1px solid #f4f4f5;border-radius:5px;padding:7px 8px"><div style="font-size:8.5px;color:#a1a1aa">Elapsed</div><div style="font-size:11px;font-weight:500;margin-top:2px">14m</div></div>
+            </div>
+            <div style="display:flex;gap:7px">
+              <div style="border:1px solid #e4e4e7;color:#3f3f46;font-size:9.5px;font-weight:500;border-radius:6px;padding:5px 11px">Pause</div>
+              <div style="border:1px solid #e4e4e7;color:#3f3f46;font-size:9.5px;font-weight:500;border-radius:6px;padding:5px 11px">View log</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>

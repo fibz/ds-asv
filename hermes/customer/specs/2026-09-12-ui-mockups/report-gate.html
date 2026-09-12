@@ -1,0 +1,96 @@
+<h2>The report gate — how do we make the rule visible?</h2>
+<p class="subtitle">Same rule in all three: a report is only FINAL when the QA attestation exists AND its scope version was approved. The question is how bluntly the screen shows why.</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Gate as a checklist of conditions</h3>
+      <p>Shows the two conditions as literal rows with their evidence. "Why isn't this final?" is answered without reading anything else. Matches the checklist home.</p>
+      <div style="margin-top:10px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:14px;color:#18181b;font-family:ui-sans-serif,system-ui,sans-serif">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+          <div><div style="font-size:12.5px;font-weight:600">Q3 2026 External ASV Report</div><div style="font-size:9.5px;color:#71717a;margin-top:3px">Scope v4 · 4 assets · 2 high findings</div></div>
+          <span style="font-size:9px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:4px;padding:3px 8px;font-weight:500">FINAL</span>
+        </div>
+        <div style="border:1px solid #e4e4e7;border-radius:6px;padding:11px 12px;margin-bottom:10px">
+          <div style="font-size:9px;letter-spacing:.07em;color:#a1a1aa;font-weight:500;margin-bottom:8px">FINALISATION GATE</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><span style="font-size:10px;color:#3f6212">✔</span><div style="font-size:10px">QA attestation</div><div style="font-size:9.5px;color:#a1a1aa;margin-left:auto">attested 3 Sep · QA staff</div></div>
+          <div style="display:flex;gap:8px;align-items:center"><span style="font-size:10px;color:#3f6212">✔</span><div style="font-size:10px">Scope version approved</div><div style="font-size:9.5px;color:#a1a1aa;margin-left:auto">v4 · approved 2 Aug</div></div>
+        </div>
+        <div style="display:flex;gap:7px">
+          <div style="background:#6d28d9;color:#fff;font-size:10px;font-weight:500;border-radius:6px;padding:6px 12px">Download PDF</div>
+          <div style="border:1px solid #e4e4e7;color:#3f3f46;font-size:10px;font-weight:500;border-radius:6px;padding:6px 12px">Findings</div>
+          <div style="border:1px solid #e4e4e7;color:#3f3f46;font-size:10px;font-weight:500;border-radius:6px;padding:6px 12px">Activity</div>
+        </div>
+        <div style="margin-top:12px;border-top:1px solid #f4f4f5;padding-top:11px">
+          <div style="font-size:9px;letter-spacing:.07em;color:#a1a1aa;font-weight:500;margin-bottom:8px">IF A CONDITION IS MISSING</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span style="font-size:10px;color:#92400e">◐</span><div style="font-size:10px">QA attestation</div><div style="font-size:9.5px;color:#92400e;margin-left:auto">pending review</div></div>
+          <div style="display:flex;gap:8px;align-items:center"><span style="font-size:10px;color:#3f6212">✔</span><div style="font-size:10px">Scope version approved</div><div style="font-size:9.5px;color:#a1a1aa;margin-left:auto">v4 · approved 2 Aug</div></div>
+          <div style="font-size:9.5px;color:#71717a;margin-top:8px">Status stays DRAFT until every condition is met.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Stepper across the header</h3>
+      <p>The report's whole life shown as 4 stages. Compact, good for a detail page — but it tells you the stage, not the specific blocker.</p>
+      <div style="margin-top:10px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:14px;color:#18181b;font-family:ui-sans-serif,system-ui,sans-serif">
+        <div style="font-size:12.5px;font-weight:600">Q3 2026 External ASV Report</div>
+        <div style="font-size:9.5px;color:#71717a;margin-top:3px;margin-bottom:14px">Scope v4 · 4 assets · generated 3 Sep</div>
+        <div style="display:flex;align-items:center;margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:6px"><span style="width:15px;height:15px;border-radius:99px;background:#6d28d9;color:#fff;font-size:8px;display:flex;align-items:center;justify-content:center">✓</span><span style="font-size:9.5px;color:#52525b">Scan complete</span></div>
+          <div style="flex:1;height:1px;background:#ddd6fe;margin:0 8px"></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="width:15px;height:15px;border-radius:99px;background:#6d28d9;color:#fff;font-size:8px;display:flex;align-items:center;justify-content:center">✓</span><span style="font-size:9.5px;color:#52525b">Findings in</span></div>
+          <div style="flex:1;height:1px;background:#ddd6fe;margin:0 8px"></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="width:15px;height:15px;border-radius:99px;background:#6d28d9;color:#fff;font-size:8px;display:flex;align-items:center;justify-content:center">✓</span><span style="font-size:9.5px;color:#52525b">Attested</span></div>
+          <div style="flex:1;height:1px;background:#ddd6fe;margin:0 8px"></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="width:15px;height:15px;border-radius:99px;background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;font-size:8px;display:flex;align-items:center;justify-content:center">★</span><span style="font-size:9.5px;font-weight:500">Final</span></div>
+        </div>
+        <div style="border:1px solid #ddd6fe;background:#faf5ff;border-radius:6px;padding:10px 11px;margin-bottom:12px">
+          <div style="font-size:10px;font-weight:500;color:#5b21b6">This report is final and downloadable</div>
+          <div style="font-size:9.5px;color:#6d28d9;margin-top:3px">Attested by QA on 3 Sep against approved scope v4.</div>
+        </div>
+        <div style="display:flex;gap:7px">
+          <div style="background:#6d28d9;color:#fff;font-size:10px;font-weight:500;border-radius:6px;padding:6px 12px">Download PDF</div>
+          <div style="border:1px solid #e4e4e7;color:#3f3f46;font-size:10px;font-weight:500;border-radius:6px;padding:6px 12px">Findings (9)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Table-first, gate as a column</h3>
+      <p>All reports in one table with the gate state visible per row; detail on click. Best for auditing many quarters, weakest at explaining a single report's blocker.</p>
+      <div style="margin-top:10px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:14px;color:#18181b;font-family:ui-sans-serif,system-ui,sans-serif">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px">
+          <div style="font-size:12.5px;font-weight:600">Reports</div>
+          <div style="display:flex;gap:5px"><span style="font-size:9px;border:1px solid #e4e4e7;border-radius:5px;padding:4px 9px;color:#52525b">All quarters</span><span style="font-size:9px;border:1px solid #e4e4e7;border-radius:5px;padding:4px 9px;color:#52525b">FINAL only</span></div>
+        </div>
+        <div style="border:1px solid #e4e4e7;border-radius:6px;overflow:hidden">
+          <div style="display:flex;background:#fafafa;font-size:8px;color:#a1a1aa;font-weight:500;letter-spacing:.07em">
+            <div style="flex:1.8;padding:6px 9px">REPORT</div><div style="flex:1;padding:6px 9px">SCOPE</div><div style="flex:1;padding:6px 9px">ATTEST</div><div style="flex:1;padding:6px 9px">GATE</div><div style="flex:.9;padding:6px 9px">STATUS</div><div style="flex:.7;padding:6px 9px"></div>
+          </div>
+          <div style="display:flex;font-size:9.5px;border-top:1px solid #f4f4f5;align-items:center">
+            <div style="flex:1.8;padding:7px 9px">Q3 2026 External</div><div style="flex:1;padding:7px 9px;color:#52525b">v4 ✓</div><div style="flex:1;padding:7px 9px;color:#52525b">3 Sep</div><div style="flex:1;padding:7px 9px;color:#3f6212">met</div><div style="flex:.9;padding:7px 9px;color:#15803d;font-weight:500">FINAL</div><div style="flex:.7;padding:7px 9px;color:#6d28d9">↓</div>
+          </div>
+          <div style="display:flex;font-size:9.5px;border-top:1px solid #f4f4f5;align-items:center">
+            <div style="flex:1.8;padding:7px 9px">Q3 2026 Internal</div><div style="flex:1;padding:7px 9px;color:#52525b">v4 ✓</div><div style="flex:1;padding:7px 9px;color:#92400e">pending</div><div style="flex:1;padding:7px 9px;color:#92400e">1 of 2</div><div style="flex:.9;padding:7px 9px;color:#a16207">DRAFT</div><div style="flex:.7;padding:7px 9px;color:#a1a1aa">—</div>
+          </div>
+          <div style="display:flex;font-size:9.5px;border-top:1px solid #f4f4f5;align-items:center">
+            <div style="flex:1.8;padding:7px 9px">Q2 2026 External</div><div style="flex:1;padding:7px 9px;color:#52525b">v3 ✓</div><div style="flex:1;padding:7px 9px;color:#52525b">12 Jun</div><div style="flex:1;padding:7px 9px;color:#3f6212">met</div><div style="flex:.9;padding:7px 9px;color:#15803d;font-weight:500">FINAL</div><div style="flex:.7;padding:7px 9px;color:#6d28d9">↓</div>
+          </div>
+        </div>
+        <div style="margin-top:11px;border:1px solid #ddd6fe;border-radius:6px;padding:10px 11px;background:#faf5ff">
+          <div style="font-size:9.5px;color:#5b21b6">Selected: Q3 2026 Internal — scope v4 approved ✓ · attestation pending. Report stays DRAFT.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
