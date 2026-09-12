@@ -1,7 +1,7 @@
 """Pydantic request/response schemas."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -81,6 +81,9 @@ class ScanHistoryItem(BaseModel):
     submitted_at: datetime
     completed_at: Optional[datetime]
     targets: List[str]
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    severity_counts: Optional[Dict[str, int]] = None
 
 
 class PortServiceEvidence(BaseModel):
@@ -125,10 +128,13 @@ class FindingResponse(BaseModel):
     description: Optional[str]
     severity: str
     cvss_score: Optional[float]
+    cvss_vector: Optional[str] = None
     source: str
     pci_fail: bool
     confidence: str
     is_suppressed: bool
+    suppression_reason: Optional[str] = None
+    raw_evidence: Optional[str] = None  # JSON blob string (Inspector viewer)
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -143,3 +149,37 @@ class SarDownloadResponse(BaseModel):
     scan_id: str
     download_url: str
     format: str  # pdf | html
+
+
+# ---------------------------------------------------------------------------
+# Dashboard (scanner/web) additions — design spec §6
+# ---------------------------------------------------------------------------
+
+
+class MeResponse(BaseModel):
+    role: str  # "operator" | "qsa"
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+
+
+class ScopeAuditResponse(BaseModel):
+    id: str
+    customer_id: str
+    previous_scope: str
+    new_scope: str
+    authorization_method: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FindingSuppressRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class FindingSuppressResponse(BaseModel):
+    id: str
+    is_suppressed: bool
+    suppression_reason: Optional[str]
+
+    model_config = {"from_attributes": True}

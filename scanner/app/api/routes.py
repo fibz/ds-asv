@@ -3,18 +3,26 @@
 import ipaddress
 import json
 import logging
-from typing import List
+from typing import Dict, List, Sequence
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps import get_db_session, verify_bearer_token
+from app.api.deps import (
+    Identity,
+    get_db_session,
+    get_identity,
+    require_operator,
+)
 from app.api.schemas import (
     CustomerCreate,
     CustomerOnboarding,
     CustomerResponse,
     FindingResponse,
+    FindingSuppressRequest,
+    FindingSuppressResponse,
+    MeResponse,
     PortServiceEvidence,
     ScanDetailResponse,
     ScanHistoryItem,
@@ -22,6 +30,7 @@ from app.api.schemas import (
     ScanResponse,
     ScanStatusResponse,
     ScanTargetDetail,
+    ScopeAuditResponse,
 )
 from app.models.customer import Customer
 from app.models.finding import Finding
@@ -131,11 +140,37 @@ def _normalize_narrow_cidrs(entries: List[str]) -> List[str]:
     return normalized
 
 
+def _scan_severity_counts(
+    db: Session, scan_ids: Sequence[str]
+) -> Dict[str, Dict[str, int]]:
+    """Map scan_id -> {severity: finding count} for a scan list.
+
+    One grouped query so the dashboard's per-scan severity tally and the 7-day
+    Watch histogram can be computed client-side without N+1 fetches.
+    """
+    if not scan_ids:
+        return {}
+    rows = (
+        db.query(Finding.scan_id, Finding.severity, func.count(Finding.id))
+        .filter(Finding.scan_id.in_(scan_ids))
+        .group_by(Finding.scan_id, Finding.severity)
+        .all()
+    )
+    counts: Dict[str, Dict[str, int]] = {
+        sid: {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+        for sid in scan_ids
+    }
+    for scan_id, severity, count in rows:
+        if scan_id in counts and severity in counts[scan_id]:
+            counts[scan_id][severity] = count
+    return counts
+
+
 @router.post("/customers", response_model=CustomerResponse, status_code=201)
 def create_customer(
     req: CustomerCreate,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     customer = Customer(
         name=req.name,
@@ -155,7 +190,7 @@ def list_customers(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     return db.query(Customer).offset(skip).limit(limit).all()
 
@@ -164,7 +199,7 @@ def list_customers(
 def get_customer(
     customer_id: str,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
@@ -177,7 +212,7 @@ def check_customer_scope(
     customer_id: str,
     target: str,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     """Check one target against persisted scope without creating a scan."""
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
@@ -202,7 +237,7 @@ def list_customer_scans(
     response: Response,
     limit: int = 50,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     """Return persisted scan history for one selected customer."""
     response.headers["Cache-Control"] = "no-store"
@@ -212,11 +247,13 @@ def list_customer_scans(
     limit = max(1, min(limit, 100))
     scans = (
         db.query(Scan)
+        .options(joinedload(Scan.customer))
         .filter(Scan.customer_id == customer_id)
         .order_by(Scan.created_at.desc())
         .limit(limit)
         .all()
     )
+    counts = _scan_severity_counts(db, [scan.id for scan in scans])
     return [
         ScanHistoryItem(
             scan_id=scan.id,
@@ -226,6 +263,9 @@ def list_customer_scans(
             submitted_at=scan.created_at,
             completed_at=scan.completed_at,
             targets=[target.hostname for target in scan.targets],
+            customer_id=scan.customer_id,
+            customer_name=scan.customer.name if scan.customer else None,
+            severity_counts=counts.get(scan.id),
         )
         for scan in scans
     ]
@@ -235,7 +275,7 @@ def list_customer_scans(
 def onboard_customer(
     req: CustomerOnboarding,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     """Create a customer whose confirmed CIDRs become its approved scan scope."""
     if not req.authorization_confirmed:
@@ -286,6 +326,17 @@ def onboard_customer(
     return customer
 
 
+def _visible_scan(db: Session, scan_id: str, identity: Identity):
+    """Fetch a scan a caller may read: QSA tokens are limited to their own
+    customer's scans (spec §2 — server-enforced, not just UI-hidden)."""
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if identity.role != "operator" and scan.customer_id != identity.customer_id:
+        raise HTTPException(status_code=403, detail="Not in your customer scope")
+    return scan
+
+
 # ---------------------------------------------------------------------------
 # Scan routes
 # ---------------------------------------------------------------------------
@@ -296,7 +347,7 @@ def enqueue_scan(
     req: ScanRequest,
     background: BackgroundTasks,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    _identity: Identity = Depends(require_operator),
 ):
     """Enqueue a new ASV scan. Creates scan + target records, then dispatches tasks."""
     customer = db.query(Customer).filter(Customer.id == req.customer_id).first()
@@ -367,11 +418,9 @@ def enqueue_scan(
 def get_scan_status(
     scan_id: str,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    identity: Identity = Depends(get_identity),
 ):
-    scan = db.query(Scan).filter(Scan.id == scan_id).first()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = _visible_scan(db, scan_id, identity)
     return ScanStatusResponse(
         scan_id=scan.id,
         status=scan.status,
@@ -389,13 +438,11 @@ def get_scan_details(
     scan_id: str,
     response: Response,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    identity: Identity = Depends(get_identity),
 ):
     """Return curated persisted evidence; never expose raw artifacts or logs."""
     response.headers["Cache-Control"] = "no-store"
-    scan = db.query(Scan).filter(Scan.id == scan_id).first()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = _visible_scan(db, scan_id, identity)
 
     targets = []
     for target in scan.targets:
@@ -454,8 +501,9 @@ def list_findings(
     severity: str | None = None,
     source: str | None = None,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    identity: Identity = Depends(get_identity),
 ):
+    _visible_scan(db, scan_id, identity)
     query = db.query(Finding).filter(Finding.scan_id == scan_id)
     if severity:
         query = query.filter(Finding.severity == severity)
@@ -468,12 +516,10 @@ def list_findings(
 def download_sar(
     scan_id: str,
     db: Session = Depends(get_db_session),
-    _token: str = Depends(verify_bearer_token),
+    identity: Identity = Depends(get_identity),
 ):
     """Download PCI-compliant Scan Attestation Report (SAR)."""
-    scan = db.query(Scan).filter(Scan.id == scan_id).first()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = _visible_scan(db, scan_id, identity)
 
     if scan.status != ScanStatus.COMPLETED:
         raise HTTPException(
@@ -492,8 +538,103 @@ def download_sar(
 
 
 # ---------------------------------------------------------------------------
-# Health check
+# Dashboard (scanner/web) — design spec §6
 # ---------------------------------------------------------------------------
+
+
+@router.get("/me", response_model=MeResponse)
+def get_me(identity: Identity = Depends(get_identity)):
+    """Return the caller's role and (for QSA) customer scope from the token."""
+    return MeResponse(
+        role=identity.role,
+        customer_id=identity.customer_id,
+        customer_name=identity.customer_name,
+    )
+
+
+@router.get("/scans", response_model=List[ScanHistoryItem])
+def list_all_scans(
+    response: Response,
+    limit: int = 50,
+    db: Session = Depends(get_db_session),
+    identity: Identity = Depends(get_identity),
+):
+    """Top-level scan list across all customers (operator), or the QSA
+    customer's scans when the token carries a customer scope."""
+    response.headers["Cache-Control"] = "no-store"
+    limit = max(1, min(limit, 200))
+    q = db.query(Scan).options(joinedload(Scan.customer))
+    if identity.role != "operator":
+        if not identity.customer_id:
+            raise HTTPException(
+                status_code=403, detail="QSA token has no customer scope"
+            )
+        q = q.filter(Scan.customer_id == identity.customer_id)
+    scans = q.order_by(Scan.created_at.desc()).limit(limit).all()
+    counts = _scan_severity_counts(db, [scan.id for scan in scans])
+    return [
+        ScanHistoryItem(
+            scan_id=scan.id,
+            status=scan.status,
+            scan_type=scan.scan_type,
+            overall_result=scan.overall_result,
+            submitted_at=scan.created_at,
+            completed_at=scan.completed_at,
+            targets=[t.hostname for t in scan.targets],
+            customer_id=scan.customer_id,
+            customer_name=scan.customer.name if scan.customer else None,
+            severity_counts=counts.get(scan.id),
+        )
+        for scan in scans
+    ]
+
+
+@router.get(
+    "/customers/{customer_id}/scope-audit", response_model=List[ScopeAuditResponse]
+)
+def get_customer_scope_audit(
+    customer_id: str,
+    response: Response,
+    db: Session = Depends(get_db_session),
+    _identity: Identity = Depends(require_operator),
+):
+    """Append-only scope-change audit for one customer (operator only)."""
+    response.headers["Cache-Control"] = "no-store"
+    events = (
+        db.query(ScopeAuditEvent)
+        .filter(ScopeAuditEvent.customer_id == customer_id)
+        .order_by(ScopeAuditEvent.created_at.desc())
+        .all()
+    )
+    return events
+
+
+@router.patch("/findings/{finding_id}/suppress", response_model=FindingSuppressResponse)
+def suppress_finding(
+    finding_id: str,
+    body: FindingSuppressRequest,
+    db: Session = Depends(get_db_session),
+    identity: Identity = Depends(get_identity),
+):
+    """Mark a finding suppressed (QSA scoped to their customer; operator any)."""
+    finding = db.query(Finding).filter(Finding.id == finding_id).first()
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    if identity.role != "operator":
+        if not identity.customer_id:
+            raise HTTPException(
+                status_code=403, detail="QSA token has no customer scope"
+            )
+        scan = db.query(Scan).filter(Scan.id == finding.scan_id).first()
+        if scan is None or scan.customer_id != identity.customer_id:
+            raise HTTPException(
+                status_code=403, detail="Finding not in your customer scope"
+            )
+    finding.is_suppressed = True
+    finding.suppression_reason = body.reason
+    db.commit()
+    db.refresh(finding)
+    return finding
 
 
 @router.get("/health")
