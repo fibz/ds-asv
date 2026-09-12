@@ -660,3 +660,41 @@ Scans ✔ 1 this quarter.
   `POST /v1/manifests` request, so the portal's dispatch call blocks for the scan's duration
   (~40s). Any client or proxy timeout shorter than the scan reports a failure for a scan that
   actually ran — exactly what happened here at 5s before the run was confirmed complete.
+
+---
+
+## 15. Reports could not exist at all (found 2026-09-12, while clicking through)
+
+A scan row's **"Findings →"** links to `/reports?scan=<id>`, which landed on the generic
+*"No reports yet"* empty state. Two separate causes, both real:
+
+1. **`buildReport` had no caller.** The service existed in `portal/src/lib/scan/report.ts`
+   and was exercised by tests, but nothing — no route, no hook, no trigger on scan
+   completion — ever invoked it. So no report could come into existence for any scan, and
+   the promise in the empty state ("a report is generated from a completed scan") was never
+   true. The scanner does not post one either.
+2. **The Reports screen ignored `?scan=`.** Every arrival looked identical, so even the
+   existence of a report would not have made that click land anywhere meaningful.
+
+### Fixed
+
+- **`POST /api/v1/reports`** added (the route previously had only `GET`): body `{ scanId }`,
+  builds or refreshes the report via `buildReport`, and maps the service's errors —
+  400 blank body, 403 without `scan.run`, 404 unknown scan, 409 when the scan is not
+  `COMPLETED`. Idempotent: one report per scan (unique on `scanId`); a re-post refreshes the
+  summary and never re-points a report whose scope version is already linked.
+  Permission is `scan.run`, deliberately not `report.view` — reading a report and generating
+  one are different powers. Covered by `portal/src/app/api/v1/reports/route.test.ts` (6 tests).
+- **The Reports screen now honours `?scan=`** (`customer-ui/src/screens/Reports.tsx`): when
+  that scan has no report yet it names the scan and offers **Generate report** (disabled with
+  an honest reason while the scan is not yet `COMPLETED`), and a 403 is called out as a
+  permission wall rather than a retry. The generic empty state is suppressed in that case, so
+  the reader is not told the problem twice without a way out. Six tests added.
+
+Generation stays an explicit action rather than a side effect of dispatch: a report is a
+compliance artifact, and creating or moving a customer's evidence should be something a person
+asks for.
+
+The report itself already carried the right verdict — `buildReport` computes
+`compliance: "FAILED"` whenever a finding has severity ≥ 4 — which is a useful contrast with
+the scans list, where the same scan shows **"✔ Passed"** (see the badge defect below).

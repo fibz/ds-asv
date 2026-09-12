@@ -1,6 +1,6 @@
 // customer-ui/src/screens/Reports.tsx
-import { Link } from "react-router-dom";
-import { useReports, useScans, useScopeSets } from "../lib/api/queries";
+import { Link, useSearchParams } from "react-router-dom";
+import { useGenerateReport, useReports, useScans, useScopeSets } from "../lib/api/queries";
 import { ApiError } from "../lib/api/client";
 import type { ReportApi, ScopeVersionApi } from "../lib/api/types";
 import { Badge } from "../components/primitives/Badge";
@@ -61,6 +61,27 @@ export function Reports() {
   // A 403 on the reports list is a permission wall, not a read failure.
   const forbidden = reports.error instanceof ApiError && reports.error.status === 403;
 
+  // A scan row's "Findings →" links here with ?scan=<id>. Until a report exists
+  // for that scan there is nothing to read, so offer the one action that
+  // creates it rather than leaving the reader at a dead end.
+  const [params] = useSearchParams();
+  const scanId = params.get("scan");
+  const generate = useGenerateReport();
+  const scan = (scans.data ?? []).find((s) => s.id === scanId) ?? null;
+  const reportForScan = scanId ? rows.find((r) => r.scanId === scanId) ?? null : null;
+  const targeted = Boolean(scanId) && !reportForScan;
+  const scanCompleted = (scan?.status ?? "").toUpperCase() === "COMPLETED";
+  const generateError = generate.error;
+  const generateMessage = generateError
+    ? generateError.status === 403
+      ? "You don’t have permission to generate reports."
+      : generateError.status === 409
+        ? "This scan hasn’t completed yet."
+        : generateError.status === 404
+          ? "That scan is no longer available."
+          : "We couldn’t generate the report. Try again."
+    : null;
+
   return (
     <div className="max-w-[1100px] mx-auto px-6 py-8">
       <h1 className="text-[18px] font-semibold">Reports</h1>
@@ -76,7 +97,39 @@ export function Reports() {
         {forbidden ? <PermissionState permission="report.view" /> : null}
         {reports.isLoading ? <Skeleton lines={5} /> : null}
 
-        {!reports.isLoading && !reports.error && rows.length === 0 ? (
+        {targeted ? (
+          <section
+            className="mb-6 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-4"
+            data-testid="generate-report"
+          >
+            <p className="text-[14px] font-medium">
+              {scan ? `No report for ${scan.name} yet` : "No report for this scan yet"}
+            </p>
+            <p className="text-[13px] text-[var(--ink-muted)] mt-1">
+              Generating a report records this scan’s findings against the scope version it was run under.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => scanId && generate.mutate(scanId)}
+                disabled={generate.isPending || !scanCompleted}
+                className="rounded-[var(--radius)] bg-[var(--accent)] text-white text-[14px] font-medium px-3.5 py-2 disabled:opacity-50"
+              >
+                {generate.isPending ? "Generating…" : "Generate report"}
+              </button>
+              {!scanCompleted ? (
+                <span className="text-[13px] text-[var(--ink-muted)]">This scan hasn’t completed yet.</span>
+              ) : null}
+              {generateMessage ? (
+                <span role="alert" className="text-[13px] text-[var(--fail)]">
+                  {generateMessage}
+                </span>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {!targeted && !reports.isLoading && !reports.error && rows.length === 0 ? (
           <EmptyState
             title="No reports yet"
             description="A report is generated from a completed scan. Once a scan finishes, its findings and finalisation gate appear here."

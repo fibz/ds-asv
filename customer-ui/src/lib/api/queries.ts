@@ -21,6 +21,38 @@ export const useScans = (): UseQueryResult<ScanApi[]> =>
 export const useReports = (): UseQueryResult<ReportApi[]> =>
   useQuery({ queryKey: keys.reports, queryFn: async () => (await apiGet<{ reports: ReportApi[] }>("/reports")).reports });
 
+/**
+ * Generate (or refresh) the report for a completed scan.
+ *
+ * Contract — read from the portal route, NOT assumed
+ * (portal/src/app/api/v1/reports/route.ts):
+ *   POST /api/v1/reports
+ *   - request body reads exactly one field: { scanId: string }
+ *     (required; the route 400s on a missing or blank value)
+ *   - 200 { report } on success — idempotent, one report per scan (unique on
+ *     scanId): re-posting refreshes the summary and never re-points a report
+ *     whose scope version is already linked
+ *   - 401 Unauthorized (no session)
+ *   - 403 Forbidden — needs the `scan.run` permission
+ *     (organization_owner | security_admin | scan_operator). `report.view` is
+ *     deliberately not enough: reading a report is not generating one.
+ *   - 404 { error: "Scan not found" } when the scan is not in this org
+ *   - 409 ReportGuardError — "report requires a COMPLETED scan"
+ *   - 500 for anything unexpected
+ *
+ * On success the report list is refetched — that is what makes the new report
+ * appear on screen.
+ */
+export function useGenerateReport(): UseMutationResult<{ report: ReportApi }, ApiError, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (scanId: string) => apiPost<{ report: ReportApi }>("/reports", { scanId }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.reports });
+    },
+  });
+}
+
 export const useScopeSets = (): UseQueryResult<ScopeSetApi[]> =>
   useQuery({ queryKey: keys.scopeSets, queryFn: async () => (await apiGet<{ scopeSets: ScopeSetApi[] }>("/scope-sets")).scopeSets });
 

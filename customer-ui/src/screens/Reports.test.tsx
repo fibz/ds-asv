@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 
 vi.mock("../lib/api/queries", () => ({
   useReports: vi.fn(),
+  useGenerateReport: vi.fn(() => ({ mutate: vi.fn(), isPending: false, error: null })),
   useScans: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
   useScopeSets: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
   useAssets: vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() })),
@@ -14,7 +15,7 @@ vi.mock("../lib/api/queries", () => ({
   keys: {},
 }));
 
-import { useReports, useScans, useScopeSets } from "../lib/api/queries";
+import { useGenerateReport, useReports, useScans, useScopeSets } from "../lib/api/queries";
 import { ApiError } from "../lib/api/client";
 import { Reports } from "./Reports";
 
@@ -194,5 +195,80 @@ describe("Reports", () => {
     vi.mocked(useScopeSets).mockReturnValue(scopeSets(version("v4", 4, "approved")) as never);
     renderReports();
     expect(screen.queryByRole("link", { name: /Download PDF/i })).toBeNull();
+  });
+});
+
+/**
+ * A scan row's "Findings →" links here with ?scan=<id>. Before this, that click
+ * landed on the generic "No reports yet" empty state — true, but a dead end:
+ * it neither named the scan nor offered the action that produces the report.
+ */
+describe("Reports — arriving from a scan", () => {
+  const renderAt = (path: string) =>
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <Reports />
+      </MemoryRouter>
+    );
+
+  const noReports = () =>
+    vi.mocked(useReports).mockReturnValue({ data: [], isLoading: false, error: null, refetch: vi.fn() } as never);
+  const completedScan = () =>
+    vi.mocked(useScans).mockReturnValue({ data: [scan], isLoading: false, error: null, refetch: vi.fn() } as never);
+  const generate = (over: Record<string, unknown> = {}) =>
+    vi.mocked(useGenerateReport).mockReturnValue({ mutate: vi.fn(), isPending: false, error: null, ...over } as never);
+
+  it("names the scan and offers to generate its report", () => {
+    noReports(); completedScan(); generate();
+    vi.mocked(useScopeSets).mockReturnValue(scopeSets() as never);
+    renderAt("/reports?scan=s1");
+    expect(screen.getByText(/No report for Q3 external yet/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Generate report/i })).toBeEnabled();
+    // The generic empty state would restate the problem without the way out.
+    expect(screen.queryByText(/No reports yet/)).toBeNull();
+  });
+
+  it("sends the scan id when the reader asks for the report", async () => {
+    const user = userEvent.setup();
+    const mutate = vi.fn();
+    noReports(); completedScan(); generate({ mutate });
+    vi.mocked(useScopeSets).mockReturnValue(scopeSets() as never);
+    renderAt("/reports?scan=s1");
+    await user.click(screen.getByRole("button", { name: /Generate report/i }));
+    expect(mutate).toHaveBeenCalledWith("s1");
+  });
+
+  it("does not offer generation once that scan already has a report", () => {
+    vi.mocked(useReports).mockReturnValue({ data: [report({ scanId: "s1" })], isLoading: false, error: null, refetch: vi.fn() } as never);
+    completedScan(); generate();
+    vi.mocked(useScopeSets).mockReturnValue(scopeSets(version("v4", 4, "approved")) as never);
+    renderAt("/reports?scan=s1");
+    expect(screen.queryByTestId("generate-report")).toBeNull();
+  });
+
+  it("will not generate for a scan that has not completed", () => {
+    noReports();
+    vi.mocked(useScans).mockReturnValue({ data: [{ ...scan, status: "RUNNING" }], isLoading: false, error: null, refetch: vi.fn() } as never);
+    generate();
+    vi.mocked(useScopeSets).mockReturnValue(scopeSets() as never);
+    renderAt("/reports?scan=s1");
+    expect(screen.getByRole("button", { name: /Generate report/i })).toBeDisabled();
+    expect(screen.getByText(/hasn’t completed yet/i)).toBeInTheDocument();
+  });
+
+  it("calls a 403 generation failure a permission wall, not a retry", () => {
+    noReports(); completedScan();
+    generate({ error: new ApiError("Forbidden", 403) });
+    vi.mocked(useScopeSets).mockReturnValue(scopeSets() as never);
+    renderAt("/reports?scan=s1");
+    expect(screen.getByRole("alert")).toHaveTextContent(/don’t have permission/i);
+  });
+
+  it("shows nothing extra when the reader arrives without a scan", () => {
+    noReports(); completedScan(); generate();
+    vi.mocked(useScopeSets).mockReturnValue(scopeSets() as never);
+    renderAt("/reports");
+    expect(screen.queryByTestId("generate-report")).toBeNull();
+    expect(screen.getByText(/No reports yet/)).toBeInTheDocument();
   });
 });
